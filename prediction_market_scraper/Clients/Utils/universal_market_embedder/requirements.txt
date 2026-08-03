@@ -1,0 +1,6 @@
+groq
+instructor
+pydantic
+sentence-transformers
+numpy
+python-dotenv

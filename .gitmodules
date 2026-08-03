@@ -1,0 +1,6 @@
+[submodule "derbit"]
+	path = derbit
+	url = https://github.com/wetoyo/derbit.git
+[submodule "prediction_market_scraper"]
+	path = prediction_market_scraper
+	url = https://github.com/wetoyo/prediction_market_scraper.git
