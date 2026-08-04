@@ -26,6 +26,7 @@ Goal-oriented steps for a specific task you already know you need to do.
 - [Fetch and store Kalshi markets](how-to/fetch-kalshi-markets.md)
 - [Fetch and store Polymarket markets](how-to/fetch-polymarket-markets.md)
 - [Stream live order books](how-to/stream-live-order-books.md)
+- [Execute live trades](how-to/execute-live-trades.md)
 - [Match markets across platforms with the UME](how-to/run-the-onboarder.md)
 
 ## Reference

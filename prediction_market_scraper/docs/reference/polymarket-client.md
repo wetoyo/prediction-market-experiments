@@ -52,3 +52,54 @@ Async generator. Sends a `{"assets_ids": asset_ids, "type": "market"}`
 subscription message, then yields each `book`/`price_change` event.
 Polymarket occasionally sends a batch as a JSON list rather than a single
 object — the generator flattens either shape into individual events.
+
+## `live_execution.py`
+
+Trading wrapper around Polymarket's CLOB — the trading side of the
+Execution Loop. Order signing (EIP-712) and API-credential derivation are
+delegated to the official
+[`py-clob-client`](https://pypi.org/project/py-clob-client/) SDK rather
+than hand-rolled, since a signing bug here risks real funds. It isn't in
+any `requirements.txt` yet — install it separately (`pip install
+py-clob-client`). Requires `POLYMARKET_PRIVATE_KEY`; see
+[Configuration](configuration.md). See
+[Execute live trades](../how-to/execute-live-trades.md) for usage.
+
+> **Status:** implemented but untested against a real wallet — no
+> Polymarket trading credentials are configured in this project yet.
+> Verify behavior before relying on it.
+
+### `PolymarketTradingClient(private_key=None, funder=None, signature_type=None)`
+
+Reads `POLYMARKET_PRIVATE_KEY`/`POLYMARKET_FUNDER`/
+`POLYMARKET_SIGNATURE_TYPE` from the environment when not passed
+explicitly. On construction, derives (or creates) API credentials via
+`create_or_derive_api_creds()` and sets `self.wallet_address` to `funder`
+if given, else the key's own address. `funder`/`signature_type` are only
+needed when trading through a Polymarket proxy/Safe wallet (email/Magic
+login) rather than a raw EOA.
+
+#### `place_order(token_id, price, size, side=BUY) -> dict`
+
+Builds and signs an `OrderArgs` order, then posts it. `side` is `BUY` or
+`SELL` from `py_clob_client.order_builder.constants`.
+
+#### `cancel_order(order_id) -> dict`
+
+#### `cancel_all_orders() -> dict`
+
+#### `get_open_orders(market=None, asset_id=None) -> list[dict]`
+
+Lists this account's resting orders, optionally filtered by condition id
+(`market`) or token id (`asset_id`).
+
+#### `get_balance() -> dict`
+
+Available USDC collateral balance and allowance, via
+`get_balance_allowance`.
+
+#### `get_positions() -> list[dict]`
+
+Fetches current positions for `self.wallet_address` from Polymarket's
+public Data API (`data-api.polymarket.com/positions`) — the CLOB itself
+has no notion of aggregate positions, only orders/trades.

@@ -73,7 +73,17 @@ CLOB market channel is public, no credentials needed).
 request signing every Kalshi websocket subscription requires — but
 untested against the live socket, since Kalshi API credentials
 (`KALSHI_API_KEY_ID`, `KALSHI_PRIVATE_KEY_PATH`) aren't set up in this
-project yet. There is no code yet that reads `market_embedder.db` to drive
-the execution loop's subscriptions or make trading decisions — the
-"Executes high-speed arbitrage decisions" step in the diagram above is not
-implemented.
+project yet.
+
+Both platforms also have a trading wrapper now
+(`Clients.Kalshi.live_execution.KalshiTradingClient`,
+`Clients.Polymarket.live_execution.PolymarketTradingClient` — see
+[Execute live trades](../how-to/execute-live-trades.md)) covering balance,
+positions, open orders, and order placement/cancellation. Like the Kalshi
+websocket client, neither has been exercised against a real account —
+Kalshi API credentials and a funded Polymarket wallet aren't available in
+this project yet. These are building blocks only: there is still no code
+that reads `market_embedder.db` to decide *what* to trade, subscribes the
+datastream to matched ids automatically, or calls these trading clients in
+response to a price discrepancy — the "Executes high-speed arbitrage
+decisions" step in the diagram above is not implemented.
