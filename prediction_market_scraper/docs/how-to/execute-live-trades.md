@@ -9,9 +9,8 @@ and test with small sizes.
 
 ## Kalshi
 
-> **Status:** implemented but untested against a live account — Kalshi API
-> credentials aren't available in this project yet. Verify behavior before
-> relying on it.
+> **Status:** verified against a real account, including a live
+> place-then-cancel round trip (1¢, 1 contract).
 
 Every request is signed the same way as the
 [websocket handshake](stream-live-order-books.md#kalshi-requires-a-signed-handshake).

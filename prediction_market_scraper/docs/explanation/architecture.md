@@ -79,11 +79,13 @@ Both platforms also have a trading wrapper now
 (`Clients.Kalshi.live_execution.KalshiTradingClient`,
 `Clients.Polymarket.live_execution.PolymarketTradingClient` — see
 [Execute live trades](../how-to/execute-live-trades.md)) covering balance,
-positions, open orders, and order placement/cancellation. Like the Kalshi
-websocket client, neither has been exercised against a real account —
-Kalshi API credentials and a funded Polymarket wallet aren't available in
-this project yet. These are building blocks only: there is still no code
-that reads `market_embedder.db` to decide *what* to trade, subscribes the
-datastream to matched ids automatically, or calls these trading clients in
-response to a price discrepancy — the "Executes high-speed arbitrage
-decisions" step in the diagram above is not implemented.
+positions, open orders, and order placement/cancellation.
+`KalshiTradingClient` has been verified against a real account, including
+a live place-then-cancel round trip. `PolymarketTradingClient` hasn't been
+exercised yet (no funded Polymarket wallet configured in this project) and
+isn't currently being worked on. These are building blocks only either
+way: there is still no code that reads `market_embedder.db` to decide
+*what* to trade, subscribes the datastream to matched ids automatically,
+or calls these trading clients in response to a price discrepancy — the
+"Executes high-speed arbitrage decisions" step in the diagram above is not
+implemented.

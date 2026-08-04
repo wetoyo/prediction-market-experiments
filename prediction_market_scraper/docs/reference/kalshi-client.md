@@ -75,9 +75,11 @@ duplicating them). Requires `KALSHI_API_KEY_ID` and
 `KALSHI_PRIVATE_KEY_PATH`; see [Configuration](configuration.md). See
 [Execute live trades](../how-to/execute-live-trades.md) for usage.
 
-> **Status:** implemented but untested against a live account — Kalshi API
-> credentials aren't configured in this project yet, the same caveat as
-> `live_datastream.py`. Verify behavior before relying on it.
+> **Status:** verified against a real account — `get_balance`,
+> `get_positions`, `get_orders`, `place_order`, and `cancel_order` have all
+> been exercised live (order placement tested with a 1¢, 1-contract order
+> that was placed and canceled). `live_datastream.py`'s websocket client is
+> still untested, since that's a separate signing path.
 
 ### `KalshiTradingClient(api_key_id=None, private_key_path=None)`
 
