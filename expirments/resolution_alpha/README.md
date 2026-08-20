@@ -58,7 +58,7 @@ Thin end-of-window liquidity is the main risk to the theoretical edge, so the ba
 ## Key risks
 
 - **Pin risk / last-second reversal:** BTC can move fast; a "sure thing" at z=3 with 45s left can still flip on a sharp wick, especially on illiquid alts. Fat tails > normal model assumes.
-- **Index/oracle mechanics:** Kalshi resolves on its own index price (possibly a TWAP or median-of-exchanges over a short window near expiry, not last-tick spot) — must reverse-engineer or find documented resolution methodology, since trading against raw spot could be wrong if the settlement mechanism smooths differently.
+- **Index/oracle mechanics — confirmed:** Kalshi settles on a 60-second trailing average of CF Benchmarks' Real Time Index (e.g. BRTI for BTC) ending at `close_time`, compared against a strike that's itself a 60-second average captured at `open_time` (pulled directly from a live market's `rules_primary` contract text on 2026-08-04). Not an instantaneous last-tick price — see [live/README.md](live/README.md) for how the probability model accounts for this. CF Benchmarks' index isn't freely available over REST, but Kalshi's authenticated websocket exposes it directly via a `cfbenchmarks_value` channel (confirmed against Kalshi's own docs on 2026-08-05) — `live/ws_feed.py` subscribes to it for BTC (`BRTI`) and ETH (`ETHUSD_RTI`), the only two index ids confirmed so far, eliminating Coinbase-proxy basis risk for those two assets. Every other underlying still uses Coinbase spot as a stand-in and still carries that basis risk.
 - **Latency:** edge window is ~60-90 seconds; need low-latency spot feed + order placement, or the edge is gone by the time you act.
 - **Fees:** Kalshi trading fees eat into small per-contract edges — must model fees explicitly, especially since payoff per contract is capped at $1.
 - **Liquidity/fill risk:** thin books near expiry mean the displayed ask may not be fully fillable at size; slippage modeling required.
@@ -73,23 +73,38 @@ Thin end-of-window liquidity is the main risk to the theoretical edge, so the ba
 
 ## Backtest plan
 
-1. Auto-discover all recurring crypto strike series (15m/30m/60m) via `fetch_series`/`fetch_markets`, then pull historical resolved markets with full order book history into expiry for each.
-2. Reconstruct, for each market, the full book state at T-90s, T-60s, T-30s through resolution (see Liquidity & fill modeling).
-3. Build a fair-value probability model (start simple: empirical frequency of resolution given z-score and time-to-expiry, bucketed from historical data — more robust than assuming Black-Scholes normality given crypto's fat tails).
-4. Simulate the entry rule by walking the reconstructed book for realistic fill price and fill probability at intended size (not the quoted best ask); include fees.
-5. Evaluate: win rate, avg edge captured, avg slippage vs. naive best-ask assumption, max drawdown from tail reversals, Sharpe/Kelly-optimal sizing, and edge decay over the sample period (is edge shrinking over time = getting arbed away?).
-6. Segment results by asset, interval length (15m vs 60m), and time-to-expiry bucket to find where edge concentrates and where liquidity actually supports meaningful size.
+**Done, partially — see `backtest.py` and its results below.** Steps 1 and 3 (discovery, probability model) are implemented and run against real settled-market history. Steps 2 and 4 (order-book reconstruction, realistic fill simulation) are **not** implemented, because they're not implementable from data Kalshi's REST API exposes: `/markets/{ticker}/orderbook` only ever returns the *current* book, never a historical one, so there is no way to know what price or depth was actually available 90 seconds before close for a market that already settled. That remains the real blocker flagged below — closing it requires recording our own order-book history going forward (via `live/ws_feed.py`'s `orderbook_delta` subscription, now running) before a fill-realistic backtest is possible.
+
+1. ~~Auto-discover all recurring crypto strike series (15m/30m/60m) via `fetch_series`/`fetch_markets`~~ done — `backtest.py` reuses `live/discovery.py`'s exact series filter against `status="settled"` markets instead of `"open"` ones.
+2. Reconstruct, for each market, the full book state at T-90s, T-60s, T-30s through resolution (see Liquidity & fill modeling) — **not done, no historical book data available** (see above).
+3. ~~Build a fair-value probability model~~ done — `live/probability.py`'s z-score/settlement-window model, run unmodified (imported, not reimplemented) against historical Coinbase spot as the same proxy `live/spot_feed.py` uses live.
+4. Simulate the entry rule by walking the reconstructed book for realistic fill price and fill probability — **not done**, same blocker as step 2. `backtest.py` reports probability-model calibration only, never P&L.
+5. Evaluate: win rate, avg edge captured, avg slippage vs. naive best-ask assumption, max drawdown, Sharpe/Kelly sizing, edge decay — **partially done**: win rate/calibration is reported (see Results below); everything requiring fill price (edge captured, slippage, drawdown, sizing) needs step 2/4's data and isn't available yet.
+6. Segment results by asset, interval length, and time-to-expiry bucket — done for time-to-expiry (`--decision-seconds`); not yet broken out by asset/interval.
+
+### Results (2026-08-05, 24h lookback, `python backtest.py --hours 24`)
+
+12,262 settled crypto interval markets across 22 qualifying series (BTC, ETH, SOL, XRP, DOGE, BNB, HYPE, NEAR, ZEC at 15m/60m cadences). At the entry threshold this strategy actually uses (`MIN_FAVORED_PROBABILITY = 0.97`, `ENTRY_WINDOW_SECONDS = 90`):
+
+| decision point | signals (model prob ≥ 0.97) | actual win rate | avg model prob |
+|---|---|---|---|
+| T-90s | 11,791 | **100.0%** | 0.9998 |
+| T-60s | 12,018 | **100.0%** | 0.9999 |
+| T-30s | 12,179 | 99.8% | 1.0000 |
+
+This is a strong result for the model's core claim (once the model is >=97% confident with the entry window's worth of time left, the favored side has historically always resolved that way in this sample) but it comes with real caveats, not just the fill-modeling gap above:
+- ~96% of *all* settled markets qualified as a "signal" at T-90s. That's expected given the thesis (crypto typically drifts well away from an at-the-money strike over a 15-60 minute window), but it means this sample isn't testing edge cases — it's testing the common case, which is also the case with the least interesting probability-model behavior (spot already far from strike, z-score trivially large).
+- Calibration is visibly worse in the 90-97% model-probability band, especially close to expiry (e.g. at T-30s, the [0.900,0.950) bucket showed a 58.8% actual win rate on n=17 vs. an average model probability of 93.6% — a real overconfidence gap, just in a band the live threshold doesn't trade on). Don't lower `MIN_FAVORED_PROBABILITY` without more data in that band.
+- Spot proxy is 1-minute Coinbase candles here vs. live's ~2-second polling (or, for BTC/ETH now, the real CF Benchmarks feed — see `live/ws_feed.py`), so the last-60-second variance-shrinkage regime in `probability.py` runs on coarser data in this backtest than it does live.
 
 ## Open questions
 
-- What exactly is Kalshi's settlement index/methodology for each crypto series? (Confirm via Kalshi API docs / contract rules before relying on any spot proxy.)
-- Are 15m markets liquid enough to fill meaningful size, or is edge only theoretically there?
-- Does edge differ between BTC (most efficient) vs. smaller-cap crypto series?
-- Is there a cleaner probability model than empirical z-score buckets (e.g. using realized vol term structure specific to short horizons)?
-- What's Kalshi's fee schedule for these series currently, and does it scale with price (higher fee on cheap/expensive contracts)?
+- Are 15m markets liquid enough to fill meaningful size, or is edge only theoretically there? (`live/discovery.py` found ~1,660 open crypto interval markets live across BTC/ETH/SOL/XRP/DOGE/BNB/HYPE/NEAR/ZEC on 2026-08-04 — plenty of candidates exist; depth per market near expiry is still unmeasured, since Kalshi's REST API has no historical order book to check this against past markets. `live/ws_feed.py` now records live book state going forward, which is the only way to eventually close this.)
+- Does edge differ between BTC (most efficient) vs. smaller-cap crypto series? Not yet segmented in `backtest.py`.
+- Is there a cleaner probability model than empirical z-score buckets (e.g. using realized vol term structure specific to short horizons)? `live/probability.py`'s calibration against 24h of settled markets is strong at the >=97% threshold this strategy actually trades on (see Backtest plan results above), but measurably worse in the 90-97% band — don't lower the threshold without more data there.
+- What's Kalshi's exact fee schedule for these series, and does it scale with price (higher fee on cheap/expensive contracts)? (`live/fees.py` uses the commonly-cited `0.07 * contracts * price * (1-price)` formula, consistent with the "quadratic" `fee_type` these series report, but unconfirmed against real fills.)
+- Does Coinbase spot track CF Benchmarks' actual settlement index closely enough near expiry to trust, or does basis risk eat the edge? **Resolved for BTC/ETH** — `live/ws_feed.py` now feeds the real CF Benchmarks index directly via websocket instead of a Coinbase proxy for those two. Still open for every other underlying.
 
 ## Status
 
-Idea stage — no code yet. Next step is pulling historical resolved-market data via the existing Kalshi scraper to validate whether the mispricing (favored-side ask meaningfully below empirical resolution frequency) actually shows up in the data before building any execution logic.
-
-The runtime component that will trade this live, once backtested, is outlined separately in [live/README.md](live/README.md) — synced to interval boundaries, trading across all auto-discovered crypto markets rather than a hardcoded list.
+A live execution loop exists — see [live/README.md](live/README.md) — and now runs on Kalshi's authenticated websocket (order book + BTC/ETH settlement index) instead of pure REST polling, with REST/Coinbase fallback wherever the socket has no data. Still **DRY_RUN by default**. Probability-model calibration has been checked against 24h of real settled-market outcomes (`backtest.py`, results above) and looks strong at the threshold the strategy trades on. What's still unvalidated: fill/liquidity economics (Kalshi's REST API has no historical order book, so this needs live data collection going forward — see Backtest plan) and real order placement (the endpoint path is unverified against the live API, see live/README.md). Don't flip `RESOLUTION_ALPHA_DRY_RUN=false` until both of those are addressed.

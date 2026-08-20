@@ -1,0 +1,599 @@
+2026-08-15 19:37:37,026 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:37:37,027 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 5.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:37:37,098 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T62749.99 @ 0.2200 (api side=ask price=0.7800)
+2026-08-15 19:37:37,173 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 8.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:37:37,262 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 10.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:37:37,341 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1300 (api side=bid price=0.1300)
+2026-08-15 19:37:37,422 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63249.99 @ 0.2800 (api side=bid price=0.2800)
+2026-08-15 19:38:38,506 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:38:38,506 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 4.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:38:38,598 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T62749.99 @ 0.2200 (api side=ask price=0.7800)
+2026-08-15 19:38:38,679 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 7.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:38:38,759 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 9.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:38:38,850 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1300 (api side=bid price=0.1300)
+2026-08-15 19:38:38,942 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T63099.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:39:40,160 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:39:40,160 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 4.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:39:40,262 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62749.99 @ 0.2200 (api side=ask price=0.7800)
+2026-08-15 19:39:40,371 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 6.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:39:40,464 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1300 (api side=bid price=0.1300)
+2026-08-15 19:39:40,566 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T63099.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:39:40,567 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 8.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:39:40,669 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 YES KXBTCD-26AUG1617-T63749.99 @ 0.0500 (api side=bid price=0.0500)
+2026-08-15 19:39:40,771 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.971, bankroll=17.60), skipping
+2026-08-15 19:40:41,750 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:40:41,751 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:40:41,821 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG151945-45: target time falls outside Deribit's listed expiry range
+2026-08-15 19:40:41,821 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62749.99 @ 0.2200 (api side=ask price=0.7800)
+2026-08-15 19:40:41,895 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 6.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:40:41,979 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1300 (api side=bid price=0.1300)
+2026-08-15 19:40:42,063 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 7.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:40:42,137 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 YES KXBTCD-26AUG1617-T63749.99 @ 0.0500 (api side=bid price=0.0500)
+2026-08-15 19:41:43,192 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:41:43,192 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:41:43,270 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62749.99 @ 0.2200 (api side=ask price=0.7800)
+2026-08-15 19:41:43,349 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 5.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:41:43,428 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:41:43,514 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 7.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:41:43,582 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 YES KXBTCD-26AUG1617-T63749.99 @ 0.0500 (api side=bid price=0.0500)
+2026-08-15 19:42:44,887 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG151945-45: target time falls outside Deribit's listed expiry range
+2026-08-15 19:42:44,888 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:42:44,888 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:42:45,000 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62749.99 @ 0.2200 (api side=ask price=0.7800)
+2026-08-15 19:42:45,099 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 5.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:42:45,202 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:42:45,317 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 6.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:43:46,490 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:43:46,491 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:43:46,565 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62749.99 @ 0.2200 (api side=ask price=0.7800)
+2026-08-15 19:43:46,656 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 4.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:43:46,740 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:43:46,832 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 6.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:43:46,916 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T63099.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:44:47,876 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:44:47,876 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:44:47,955 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62749.99 @ 0.2200 (api side=ask price=0.7800)
+2026-08-15 19:44:48,039 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 4.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:44:48,124 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:44:48,194 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 5.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:45:49,268 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152000-00: target time falls outside Deribit's listed expiry range
+2026-08-15 19:45:49,269 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:45:49,269 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:45:49,355 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62749.99 @ 0.2200 (api side=ask price=0.7800)
+2026-08-15 19:45:49,431 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 4.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:45:49,521 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:45:49,611 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 5.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:46:50,596 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:46:50,596 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152000-00: target time falls outside Deribit's listed expiry range
+2026-08-15 19:46:50,597 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:46:50,677 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 4.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:46:50,753 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.953, bankroll=10.62), skipping
+2026-08-15 19:46:50,753 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:46:50,843 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 5.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:47:51,868 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:47:51,868 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152000-00: target time falls outside Deribit's listed expiry range
+2026-08-15 19:47:51,868 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:47:51,948 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:47:52,028 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.899, bankroll=10.02), skipping
+2026-08-15 19:47:52,028 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:47:52,109 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 4.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:48:53,113 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:48:53,113 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152000-00: target time falls outside Deribit's listed expiry range
+2026-08-15 19:48:53,113 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:48:53,176 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:48:53,259 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.821, bankroll=9.27), skipping
+2026-08-15 19:48:53,259 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:48:53,328 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 4.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:49:54,347 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152000-00: target time falls outside Deribit's listed expiry range
+2026-08-15 19:49:54,347 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:49:54,347 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:49:54,429 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:49:54,503 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.751, bankroll=8.74), skipping
+2026-08-15 19:49:54,504 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:49:54,583 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 4.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:50:55,907 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:50:55,907 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:50:55,983 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.865, bankroll=8.20), skipping
+2026-08-15 19:50:55,983 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:50:56,057 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152000-00: target time falls outside Deribit's listed expiry range
+2026-08-15 19:50:56,058 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63499.99 @ 0.1200 (api side=bid price=0.1200)
+2026-08-15 19:50:56,140 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:51:57,147 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:51:57,148 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:51:57,230 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:51:57,303 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.761, bankroll=7.79), skipping
+2026-08-15 19:51:57,303 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.857, bankroll=7.79), skipping
+2026-08-15 19:51:57,303 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:52:58,337 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:52:58,337 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.0900 (api side=ask price=0.9100)
+2026-08-15 19:52:58,417 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0400 (api side=ask price=0.9600)
+2026-08-15 19:52:58,496 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.726, bankroll=7.50), skipping
+2026-08-15 19:52:58,496 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.834, bankroll=7.50), skipping
+2026-08-15 19:52:58,497 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:53:59,593 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:53:59,593 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 19:53:59,670 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.730, bankroll=7.26), skipping
+2026-08-15 19:53:59,671 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 19:53:59,753 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:53:59,836 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.771, bankroll=7.26), skipping
+2026-08-15 19:55:00,797 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:55:00,797 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 19:55:00,863 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.723, bankroll=7.03), skipping
+2026-08-15 19:55:00,863 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 19:55:00,948 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:55:01,018 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.723, bankroll=7.03), skipping
+2026-08-15 19:56:02,033 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:56:02,033 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 19:56:02,114 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.669, bankroll=6.81), skipping
+2026-08-15 19:56:02,114 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 19:56:02,194 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.740, bankroll=6.81), skipping
+2026-08-15 19:56:02,195 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152000-00: target time falls outside Deribit's listed expiry range
+2026-08-15 19:56:02,195 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:57:03,243 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:57:03,244 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 19:57:03,330 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.660, bankroll=6.58), skipping
+2026-08-15 19:57:03,330 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 19:57:03,403 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:57:03,479 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.697, bankroll=6.58), skipping
+2026-08-15 19:58:04,458 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 19:58:04,545 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1520-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 19:58:04,546 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.635, bankroll=6.36), skipping
+2026-08-15 19:58:04,546 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 19:58:04,630 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:58:04,712 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.677, bankroll=6.36), skipping
+2026-08-15 19:59:05,649 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 19:59:05,730 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.521, bankroll=6.14), skipping
+2026-08-15 19:59:05,731 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 19:59:05,807 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 19:59:05,883 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.638, bankroll=6.14), skipping
+2026-08-15 20:00:06,767 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 20:00:06,844 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 20:00:06,919 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.488, bankroll=5.91), skipping
+2026-08-15 20:00:06,919 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:00:06,994 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.632, bankroll=5.91), skipping
+2026-08-15 20:01:07,985 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152015-15: target time falls outside Deribit's listed expiry range
+2026-08-15 20:01:07,986 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:01:07,986 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 20:01:08,069 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:01:08,069 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 20:01:08,144 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T63099.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:01:08,145 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.424, bankroll=5.69), skipping
+2026-08-15 20:01:08,145 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 3.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:01:08,215 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.549, bankroll=5.69), skipping
+2026-08-15 20:02:09,126 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:02:09,126 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 20:02:09,206 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:02:09,206 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 20:02:09,280 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152015-15: target time falls outside Deribit's listed expiry range
+2026-08-15 20:02:09,280 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.403, bankroll=5.18), skipping
+2026-08-15 20:02:09,280 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:02:09,356 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T63099.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:02:09,357 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.478, bankroll=5.18), skipping
+2026-08-15 20:03:10,324 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152015-15: target time falls outside Deribit's listed expiry range
+2026-08-15 20:03:10,324 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:03:10,324 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 20:03:10,407 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 20:03:10,486 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:03:10,486 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.412, bankroll=4.98), skipping
+2026-08-15 20:03:10,486 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:03:10,558 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.592, bankroll=4.98), skipping
+2026-08-15 20:03:10,558 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.304, bankroll=4.98), skipping
+2026-08-15 20:03:10,559 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T63099.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:04:11,556 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152015-15: target time falls outside Deribit's listed expiry range
+2026-08-15 20:04:11,556 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62499.99 @ 0.1000 (api side=ask price=0.9000)
+2026-08-15 20:04:11,640 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:04:11,640 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:04:11,640 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 20:04:11,717 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.416, bankroll=4.78), skipping
+2026-08-15 20:04:11,717 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.723, bankroll=4.78), skipping
+2026-08-15 20:04:11,718 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:04:11,792 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.270, bankroll=4.78), skipping
+2026-08-15 20:05:12,695 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:05:12,695 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152015-15: target time falls outside Deribit's listed expiry range
+2026-08-15 20:05:12,696 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.994, bankroll=4.58), skipping
+2026-08-15 20:05:12,696 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.422, bankroll=4.58), skipping
+2026-08-15 20:05:12,696 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.769, bankroll=4.58), skipping
+2026-08-15 20:05:12,696 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 20:05:12,776 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:05:12,885 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.310, bankroll=4.58), skipping
+2026-08-15 20:05:12,885 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63749.99 @ 0.0400 (api side=bid price=0.0400)
+2026-08-15 20:05:12,967 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T63099.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:05:12,968 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:06:13,902 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.976, bankroll=4.44), skipping
+2026-08-15 20:06:13,903 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:06:13,903 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.418, bankroll=4.44), skipping
+2026-08-15 20:06:13,903 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152015-15: target time falls outside Deribit's listed expiry range
+2026-08-15 20:06:13,903 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.733, bankroll=4.44), skipping
+2026-08-15 20:06:13,904 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 20:06:13,979 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:06:14,057 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.294, bankroll=4.44), skipping
+2026-08-15 20:06:14,058 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:06:14,058 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 YES KXBTCD-26AUG1617-T63749.99 @ 0.0400 (api side=bid price=0.0400)
+2026-08-15 20:07:15,400 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.968, bankroll=4.30), skipping
+2026-08-15 20:07:15,400 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:07:15,400 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.422, bankroll=4.30), skipping
+2026-08-15 20:07:15,400 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 20:07:15,487 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.685, bankroll=4.30), skipping
+2026-08-15 20:07:15,488 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:07:15,569 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:07:15,569 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.267, bankroll=4.30), skipping
+2026-08-15 20:07:15,569 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.962, bankroll=4.30), skipping
+2026-08-15 20:08:16,531 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:08:16,532 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.956, bankroll=4.20), skipping
+2026-08-15 20:08:16,532 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.421, bankroll=4.20), skipping
+2026-08-15 20:08:16,532 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T62249.99 @ 0.0500 (api side=ask price=0.9500)
+2026-08-15 20:08:16,602 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.658, bankroll=4.20), skipping
+2026-08-15 20:08:16,602 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:08:16,602 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:08:16,680 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.252, bankroll=4.20), skipping
+2026-08-15 20:08:16,680 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.927, bankroll=4.20), skipping
+2026-08-15 20:09:17,585 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.930, bankroll=4.16), skipping
+2026-08-15 20:09:17,585 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:09:17,586 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.406, bankroll=4.16), skipping
+2026-08-15 20:09:17,586 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.670, bankroll=4.16), skipping
+2026-08-15 20:09:17,586 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.833, bankroll=4.16), skipping
+2026-08-15 20:09:17,586 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:09:17,657 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.261, bankroll=4.16), skipping
+2026-08-15 20:09:17,657 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:09:17,657 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.943, bankroll=4.16), skipping
+2026-08-15 20:10:18,603 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:10:18,604 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.915, bankroll=4.12), skipping
+2026-08-15 20:10:18,604 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.398, bankroll=4.12), skipping
+2026-08-15 20:10:18,604 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.670, bankroll=4.12), skipping
+2026-08-15 20:10:18,604 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.819, bankroll=4.12), skipping
+2026-08-15 20:10:18,604 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:10:18,679 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.263, bankroll=4.12), skipping
+2026-08-15 20:10:18,679 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.947, bankroll=4.12), skipping
+2026-08-15 20:10:18,679 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62899.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:11:19,607 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:11:19,608 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.867, bankroll=4.07), skipping
+2026-08-15 20:11:19,608 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.704, bankroll=4.07), skipping
+2026-08-15 20:11:19,608 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.365, bankroll=4.07), skipping
+2026-08-15 20:11:19,608 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.289, bankroll=4.07), skipping
+2026-08-15 20:11:19,609 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:11:19,688 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.771, bankroll=4.07), skipping
+2026-08-15 20:11:19,688 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.993, bankroll=4.07), skipping
+2026-08-15 20:12:20,611 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:12:20,611 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.860, bankroll=4.03), skipping
+2026-08-15 20:12:20,611 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.696, bankroll=4.03), skipping
+2026-08-15 20:12:20,611 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.361, bankroll=4.03), skipping
+2026-08-15 20:12:20,612 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.288, bankroll=4.03), skipping
+2026-08-15 20:12:20,612 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152015-15: target time falls outside Deribit's listed expiry range
+2026-08-15 20:12:20,612 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:12:20,695 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.765, bankroll=4.03), skipping
+2026-08-15 20:12:20,695 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.983, bankroll=4.03), skipping
+2026-08-15 20:13:21,720 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:13:21,720 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.869, bankroll=3.99), skipping
+2026-08-15 20:13:21,720 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.370, bankroll=3.99), skipping
+2026-08-15 20:13:21,721 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.673, bankroll=3.99), skipping
+2026-08-15 20:13:21,721 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.775, bankroll=3.99), skipping
+2026-08-15 20:13:21,721 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:13:21,783 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.275, bankroll=3.99), skipping
+2026-08-15 20:13:21,783 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.953, bankroll=3.99), skipping
+2026-08-15 20:14:22,981 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:14:22,982 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.899, bankroll=3.95), skipping
+2026-08-15 20:14:22,982 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.392, bankroll=3.95), skipping
+2026-08-15 20:14:22,982 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.627, bankroll=3.95), skipping
+2026-08-15 20:14:22,982 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.805, bankroll=3.95), skipping
+2026-08-15 20:14:22,982 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:14:23,090 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.244, bankroll=3.95), skipping
+2026-08-15 20:14:23,090 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.893, bankroll=3.95), skipping
+2026-08-15 20:15:24,180 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:15:24,181 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.907, bankroll=4.00), skipping
+2026-08-15 20:15:24,181 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.636, bankroll=4.00), skipping
+2026-08-15 20:15:24,181 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.332, bankroll=4.00), skipping
+2026-08-15 20:15:24,181 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:15:24,181 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.812, bankroll=4.00), skipping
+2026-08-15 20:15:24,182 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:15:24,261 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.247, bankroll=4.00), skipping
+2026-08-15 20:15:24,261 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.906, bankroll=4.00), skipping
+2026-08-15 20:16:25,269 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:16:25,269 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.898, bankroll=3.96), skipping
+2026-08-15 20:16:25,269 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:16:25,270 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.629, bankroll=3.96), skipping
+2026-08-15 20:16:25,270 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.329, bankroll=3.96), skipping
+2026-08-15 20:16:25,270 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.803, bankroll=3.96), skipping
+2026-08-15 20:16:25,270 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:16:25,347 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.242, bankroll=3.96), skipping
+2026-08-15 20:16:25,347 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.892, bankroll=3.96), skipping
+2026-08-15 20:17:26,315 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:17:26,315 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.884, bankroll=3.91), skipping
+2026-08-15 20:17:26,315 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:17:26,315 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.386, bankroll=3.91), skipping
+2026-08-15 20:17:26,316 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.624, bankroll=3.91), skipping
+2026-08-15 20:17:26,316 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.789, bankroll=3.91), skipping
+2026-08-15 20:17:26,316 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:17:26,393 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.240, bankroll=3.91), skipping
+2026-08-15 20:17:26,394 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.880, bankroll=3.91), skipping
+2026-08-15 20:18:27,347 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:18:27,347 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:18:27,348 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.872, bankroll=3.87), skipping
+2026-08-15 20:18:27,348 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.380, bankroll=3.87), skipping
+2026-08-15 20:18:27,348 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.619, bankroll=3.87), skipping
+2026-08-15 20:18:27,348 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.778, bankroll=3.87), skipping
+2026-08-15 20:18:27,349 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:18:27,438 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.238, bankroll=3.87), skipping
+2026-08-15 20:18:27,438 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.871, bankroll=3.87), skipping
+2026-08-15 20:19:28,399 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:19:28,400 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:19:28,400 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.859, bankroll=3.83), skipping
+2026-08-15 20:19:28,400 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.374, bankroll=3.83), skipping
+2026-08-15 20:19:28,400 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.616, bankroll=3.83), skipping
+2026-08-15 20:19:28,400 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.766, bankroll=3.83), skipping
+2026-08-15 20:19:28,401 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 2.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:19:28,483 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.237, bankroll=3.83), skipping
+2026-08-15 20:19:28,483 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.868, bankroll=3.83), skipping
+2026-08-15 20:20:29,417 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:20:29,417 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:20:29,417 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.837, bankroll=3.79), skipping
+2026-08-15 20:20:29,417 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.361, bankroll=3.79), skipping
+2026-08-15 20:20:29,418 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.621, bankroll=3.79), skipping
+2026-08-15 20:20:29,418 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.745, bankroll=3.79), skipping
+2026-08-15 20:20:29,418 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:20:29,494 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.243, bankroll=3.79), skipping
+2026-08-15 20:20:29,495 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.878, bankroll=3.79), skipping
+2026-08-15 20:21:30,481 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:21:30,481 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:21:30,481 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.840, bankroll=3.76), skipping
+2026-08-15 20:21:30,481 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.365, bankroll=3.76), skipping
+2026-08-15 20:21:30,482 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.603, bankroll=3.76), skipping
+2026-08-15 20:21:30,482 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.748, bankroll=3.76), skipping
+2026-08-15 20:21:30,482 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:21:30,568 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.233, bankroll=3.76), skipping
+2026-08-15 20:21:30,568 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.855, bankroll=3.76), skipping
+2026-08-15 20:22:31,560 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:22:31,560 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:22:31,561 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.836, bankroll=3.74), skipping
+2026-08-15 20:22:31,561 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.367, bankroll=3.74), skipping
+2026-08-15 20:22:31,561 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.596, bankroll=3.74), skipping
+2026-08-15 20:22:31,561 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.745, bankroll=3.74), skipping
+2026-08-15 20:22:31,561 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:22:31,639 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.231, bankroll=3.74), skipping
+2026-08-15 20:22:31,639 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.844, bankroll=3.74), skipping
+2026-08-15 20:23:32,628 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:23:32,629 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:23:32,629 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.667, bankroll=3.72), skipping
+2026-08-15 20:23:32,629 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.364, bankroll=3.72), skipping
+2026-08-15 20:23:32,629 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.591, bankroll=3.72), skipping
+2026-08-15 20:23:32,630 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.739, bankroll=3.72), skipping
+2026-08-15 20:23:32,630 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:23:32,708 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.229, bankroll=3.72), skipping
+2026-08-15 20:23:32,709 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.838, bankroll=3.72), skipping
+2026-08-15 20:24:33,663 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:24:33,663 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:24:33,664 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.662, bankroll=3.70), skipping
+2026-08-15 20:24:33,664 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.361, bankroll=3.70), skipping
+2026-08-15 20:24:33,664 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.585, bankroll=3.70), skipping
+2026-08-15 20:24:33,664 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.731, bankroll=3.70), skipping
+2026-08-15 20:24:33,664 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:24:33,744 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.227, bankroll=3.70), skipping
+2026-08-15 20:24:33,744 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.826, bankroll=3.70), skipping
+2026-08-15 20:25:34,759 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:25:34,760 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:25:34,760 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.657, bankroll=3.68), skipping
+2026-08-15 20:25:34,760 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.357, bankroll=3.68), skipping
+2026-08-15 20:25:34,760 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.580, bankroll=3.68), skipping
+2026-08-15 20:25:34,760 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.724, bankroll=3.68), skipping
+2026-08-15 20:25:34,761 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:25:34,838 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.225, bankroll=3.68), skipping
+2026-08-15 20:25:34,838 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.817, bankroll=3.68), skipping
+2026-08-15 20:26:36,226 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:26:36,227 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:26:36,227 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.654, bankroll=3.66), skipping
+2026-08-15 20:26:36,227 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.355, bankroll=3.66), skipping
+2026-08-15 20:26:36,227 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.571, bankroll=3.66), skipping
+2026-08-15 20:26:36,228 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.720, bankroll=3.66), skipping
+2026-08-15 20:26:36,228 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:26:36,312 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.222, bankroll=3.66), skipping
+2026-08-15 20:26:36,312 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.808, bankroll=3.66), skipping
+2026-08-15 20:27:37,332 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152030-30: target time falls outside Deribit's listed expiry range
+2026-08-15 20:27:37,332 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:27:37,332 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.642, bankroll=3.64), skipping
+2026-08-15 20:27:37,333 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.347, bankroll=3.64), skipping
+2026-08-15 20:27:37,333 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.573, bankroll=3.64), skipping
+2026-08-15 20:27:37,333 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.707, bankroll=3.64), skipping
+2026-08-15 20:27:37,333 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:27:37,424 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.225, bankroll=3.64), skipping
+2026-08-15 20:27:37,424 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.811, bankroll=3.64), skipping
+2026-08-15 20:28:38,687 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:28:38,688 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.628, bankroll=3.61), skipping
+2026-08-15 20:28:38,688 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.338, bankroll=3.61), skipping
+2026-08-15 20:28:38,688 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.575, bankroll=3.61), skipping
+2026-08-15 20:28:38,688 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.690, bankroll=3.61), skipping
+2026-08-15 20:28:38,688 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:28:38,782 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.231, bankroll=3.61), skipping
+2026-08-15 20:28:38,783 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.813, bankroll=3.61), skipping
+2026-08-15 20:29:39,865 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:29:39,866 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.628, bankroll=3.59), skipping
+2026-08-15 20:29:39,866 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.339, bankroll=3.59), skipping
+2026-08-15 20:29:39,866 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.564, bankroll=3.59), skipping
+2026-08-15 20:29:39,866 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.690, bankroll=3.59), skipping
+2026-08-15 20:29:39,866 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:29:39,940 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.227, bankroll=3.59), skipping
+2026-08-15 20:29:39,941 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.796, bankroll=3.59), skipping
+2026-08-15 20:30:41,029 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:30:41,029 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.622, bankroll=3.57), skipping
+2026-08-15 20:30:41,029 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.335, bankroll=3.57), skipping
+2026-08-15 20:30:41,030 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:30:41,030 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.562, bankroll=3.57), skipping
+2026-08-15 20:30:41,030 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.683, bankroll=3.57), skipping
+2026-08-15 20:30:41,030 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:30:41,113 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.229, bankroll=3.57), skipping
+2026-08-15 20:30:41,113 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.792, bankroll=3.57), skipping
+2026-08-15 20:31:42,386 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:31:42,386 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:31:42,387 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.648, bankroll=3.55), skipping
+2026-08-15 20:31:42,387 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.356, bankroll=3.55), skipping
+2026-08-15 20:31:42,387 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.521, bankroll=3.55), skipping
+2026-08-15 20:31:42,387 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.712, bankroll=3.55), skipping
+2026-08-15 20:31:42,387 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:31:42,481 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.204, bankroll=3.55), skipping
+2026-08-15 20:32:43,715 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.636, bankroll=3.53), skipping
+2026-08-15 20:32:43,715 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:32:43,715 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.527, bankroll=3.53), skipping
+2026-08-15 20:32:43,716 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.695, bankroll=3.53), skipping
+2026-08-15 20:32:43,716 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:32:43,829 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.238, bankroll=3.53), skipping
+2026-08-15 20:32:43,829 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.209, bankroll=3.53), skipping
+2026-08-15 20:33:45,161 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.652, bankroll=3.51), skipping
+2026-08-15 20:33:45,161 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.500, bankroll=3.51), skipping
+2026-08-15 20:33:45,161 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.714, bankroll=3.51), skipping
+2026-08-15 20:33:45,161 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.252, bankroll=3.51), skipping
+2026-08-15 20:33:45,162 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:33:45,280 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:34:46,534 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.638, bankroll=3.49), skipping
+2026-08-15 20:34:46,535 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:34:46,535 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.506, bankroll=3.49), skipping
+2026-08-15 20:34:46,535 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:34:46,535 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.699, bankroll=3.49), skipping
+2026-08-15 20:34:46,535 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.244, bankroll=3.49), skipping
+2026-08-15 20:34:46,536 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:35:47,903 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.631, bankroll=3.46), skipping
+2026-08-15 20:35:47,903 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:35:47,903 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.502, bankroll=3.46), skipping
+2026-08-15 20:35:47,904 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.690, bankroll=3.46), skipping
+2026-08-15 20:35:47,904 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.241, bankroll=3.46), skipping
+2026-08-15 20:35:47,904 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:36:49,257 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:36:49,257 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.626, bankroll=3.44), skipping
+2026-08-15 20:36:49,257 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:36:49,257 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.500, bankroll=3.44), skipping
+2026-08-15 20:36:49,258 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.686, bankroll=3.44), skipping
+2026-08-15 20:36:49,258 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.239, bankroll=3.44), skipping
+2026-08-15 20:36:49,258 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:37:51,489 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:37:51,489 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:37:51,490 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.586, bankroll=3.42), skipping
+2026-08-15 20:37:51,490 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.538, bankroll=3.42), skipping
+2026-08-15 20:37:51,490 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.263, bankroll=3.42), skipping
+2026-08-15 20:37:51,490 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.642, bankroll=3.42), skipping
+2026-08-15 20:37:51,490 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:37:51,703 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.220, bankroll=3.42), skipping
+2026-08-15 20:37:51,703 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.737, bankroll=3.42), skipping
+2026-08-15 20:38:52,691 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:38:52,691 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:38:52,691 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.574, bankroll=3.40), skipping
+2026-08-15 20:38:52,692 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.308, bankroll=3.40), skipping
+2026-08-15 20:38:52,692 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.550, bankroll=3.40), skipping
+2026-08-15 20:38:52,692 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.230, bankroll=3.40), skipping
+2026-08-15 20:38:52,692 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:38:52,774 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.627, bankroll=3.40), skipping
+2026-08-15 20:38:52,775 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.753, bankroll=3.40), skipping
+2026-08-15 20:39:53,756 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:39:53,756 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:39:53,757 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.573, bankroll=3.38), skipping
+2026-08-15 20:39:53,757 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.308, bankroll=3.38), skipping
+2026-08-15 20:39:53,757 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.547, bankroll=3.38), skipping
+2026-08-15 20:39:53,757 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.230, bankroll=3.38), skipping
+2026-08-15 20:39:53,757 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.627, bankroll=3.38), skipping
+2026-08-15 20:39:53,758 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:39:53,835 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.745, bankroll=3.38), skipping
+2026-08-15 20:40:54,790 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:40:54,791 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:40:54,791 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.606, bankroll=3.36), skipping
+2026-08-15 20:40:54,791 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.333, bankroll=3.36), skipping
+2026-08-15 20:40:54,791 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.503, bankroll=3.36), skipping
+2026-08-15 20:40:54,791 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.662, bankroll=3.36), skipping
+2026-08-15 20:40:54,792 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:40:54,874 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.201, bankroll=3.36), skipping
+2026-08-15 20:41:56,197 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:41:56,197 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.605, bankroll=3.34), skipping
+2026-08-15 20:41:56,197 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.280, bankroll=3.34), skipping
+2026-08-15 20:41:56,197 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.496, bankroll=3.34), skipping
+2026-08-15 20:41:56,198 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.659, bankroll=3.34), skipping
+2026-08-15 20:41:56,198 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:41:56,283 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.197, bankroll=3.34), skipping
+2026-08-15 20:42:57,313 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152045-45: target time falls outside Deribit's listed expiry range
+2026-08-15 20:42:57,313 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.562, bankroll=3.32), skipping
+2026-08-15 20:42:57,313 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.539, bankroll=3.32), skipping
+2026-08-15 20:42:57,314 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.250, bankroll=3.32), skipping
+2026-08-15 20:42:57,314 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.226, bankroll=3.32), skipping
+2026-08-15 20:42:57,314 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.613, bankroll=3.32), skipping
+2026-08-15 20:42:57,314 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:42:57,391 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.727, bankroll=3.32), skipping
+2026-08-15 20:43:58,485 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:43:58,485 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.562, bankroll=3.29), skipping
+2026-08-15 20:43:58,485 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.305, bankroll=3.29), skipping
+2026-08-15 20:43:58,485 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.529, bankroll=3.29), skipping
+2026-08-15 20:43:58,486 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.221, bankroll=3.29), skipping
+2026-08-15 20:43:58,486 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.614, bankroll=3.29), skipping
+2026-08-15 20:43:58,486 WARNING btc_implied_prob.order_manager: LIVE ORDER: BUY 1.00 NO KXBTCD-26AUG1617-T61999.99 @ 0.0200 (api side=ask price=0.9800)
+2026-08-15 20:43:58,560 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.710, bankroll=3.29), skipping
+2026-08-15 20:44:59,583 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:44:59,584 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.228, bankroll=1.32), skipping
+2026-08-15 20:44:59,584 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.124, bankroll=1.32), skipping
+2026-08-15 20:44:59,584 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.211, bankroll=1.32), skipping
+2026-08-15 20:44:59,584 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.249, bankroll=1.32), skipping
+2026-08-15 20:44:59,585 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T61999.99 kelly size rounds to 0 contracts (raw=0.666, bankroll=1.32), skipping
+2026-08-15 20:44:59,585 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.088, bankroll=1.32), skipping
+2026-08-15 20:44:59,585 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.281, bankroll=1.32), skipping
+2026-08-15 20:46:00,653 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:46:00,653 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.227, bankroll=1.32), skipping
+2026-08-15 20:46:00,653 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152100-00: target time falls outside Deribit's listed expiry range
+2026-08-15 20:46:00,653 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.124, bankroll=1.32), skipping
+2026-08-15 20:46:00,654 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.212, bankroll=1.32), skipping
+2026-08-15 20:46:00,654 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.248, bankroll=1.32), skipping
+2026-08-15 20:46:00,654 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.089, bankroll=1.32), skipping
+2026-08-15 20:46:00,654 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T61999.99 kelly size rounds to 0 contracts (raw=0.664, bankroll=1.32), skipping
+2026-08-15 20:46:00,654 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.282, bankroll=1.32), skipping
+2026-08-15 20:47:01,737 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:47:01,737 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152100-00: target time falls outside Deribit's listed expiry range
+2026-08-15 20:47:01,737 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.237, bankroll=1.32), skipping
+2026-08-15 20:47:01,737 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.130, bankroll=1.32), skipping
+2026-08-15 20:47:01,738 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.206, bankroll=1.32), skipping
+2026-08-15 20:47:01,738 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.106, bankroll=1.32), skipping
+2026-08-15 20:47:01,738 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.225, bankroll=1.32), skipping
+2026-08-15 20:47:01,738 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.314, bankroll=1.32), skipping
+2026-08-15 20:48:02,928 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:48:02,928 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152100-00: target time falls outside Deribit's listed expiry range
+2026-08-15 20:48:02,929 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.135, bankroll=1.32), skipping
+2026-08-15 20:48:02,929 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.230, bankroll=1.32), skipping
+2026-08-15 20:48:02,929 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.213, bankroll=1.32), skipping
+2026-08-15 20:48:02,929 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.102, bankroll=1.32), skipping
+2026-08-15 20:48:02,929 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.232, bankroll=1.32), skipping
+2026-08-15 20:48:02,930 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.303, bankroll=1.32), skipping
+2026-08-15 20:49:03,928 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:49:03,928 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152100-00: target time falls outside Deribit's listed expiry range
+2026-08-15 20:49:03,928 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.141, bankroll=1.32), skipping
+2026-08-15 20:49:03,928 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.220, bankroll=1.32), skipping
+2026-08-15 20:49:03,929 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.221, bankroll=1.32), skipping
+2026-08-15 20:49:03,929 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63249.99 kelly size rounds to 0 contracts (raw=0.096, bankroll=1.32), skipping
+2026-08-15 20:49:03,929 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.238, bankroll=1.32), skipping
+2026-08-15 20:49:03,929 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63749.99 kelly size rounds to 0 contracts (raw=0.290, bankroll=1.32), skipping
+2026-08-15 20:50:05,016 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:50:05,016 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.239, bankroll=1.32), skipping
+2026-08-15 20:50:05,016 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.134, bankroll=1.32), skipping
+2026-08-15 20:50:05,016 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.196, bankroll=1.32), skipping
+2026-08-15 20:50:05,017 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.259, bankroll=1.32), skipping
+2026-08-15 20:51:06,173 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:51:06,173 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.602, bankroll=3.32), skipping
+2026-08-15 20:51:06,174 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.340, bankroll=3.32), skipping
+2026-08-15 20:51:06,174 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.486, bankroll=3.32), skipping
+2026-08-15 20:51:06,174 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.653, bankroll=3.32), skipping
+2026-08-15 20:52:07,119 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:52:07,119 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.595, bankroll=3.32), skipping
+2026-08-15 20:52:07,120 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.335, bankroll=3.32), skipping
+2026-08-15 20:52:07,120 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.488, bankroll=3.32), skipping
+2026-08-15 20:52:07,120 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.643, bankroll=3.32), skipping
+2026-08-15 20:53:08,350 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:53:08,350 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.569, bankroll=3.32), skipping
+2026-08-15 20:53:08,351 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.316, bankroll=3.32), skipping
+2026-08-15 20:53:08,351 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.511, bankroll=3.32), skipping
+2026-08-15 20:53:08,351 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152100-00: target time falls outside Deribit's listed expiry range
+2026-08-15 20:53:08,351 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.613, bankroll=3.32), skipping
+2026-08-15 20:54:09,404 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:54:09,404 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.571, bankroll=3.32), skipping
+2026-08-15 20:54:09,404 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.316, bankroll=3.32), skipping
+2026-08-15 20:54:09,405 INFO btc_implied_prob.strategy: skipping KXBTC15M-26AUG152100-00: target time falls outside Deribit's listed expiry range
+2026-08-15 20:54:09,405 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.509, bankroll=3.32), skipping
+2026-08-15 20:54:09,405 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.617, bankroll=3.32), skipping
+2026-08-15 20:55:10,355 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:55:10,355 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.571, bankroll=3.32), skipping
+2026-08-15 20:55:10,355 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.315, bankroll=3.32), skipping
+2026-08-15 20:55:10,355 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.510, bankroll=3.32), skipping
+2026-08-15 20:55:10,355 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.617, bankroll=3.32), skipping
+2026-08-15 20:56:11,292 INFO btc_implied_prob.strategy: skipping KXBTCD-26AUG1521-T62999.99: target time falls outside Deribit's listed expiry range
+2026-08-15 20:56:11,292 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62499.99 kelly size rounds to 0 contracts (raw=0.573, bankroll=3.32), skipping
+2026-08-15 20:56:11,292 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62749.99 kelly size rounds to 0 contracts (raw=0.315, bankroll=3.32), skipping
+2026-08-15 20:56:11,293 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T63499.99 kelly size rounds to 0 contracts (raw=0.509, bankroll=3.32), skipping
+2026-08-15 20:56:11,293 INFO btc_implied_prob.strategy: KXBTCD-26AUG1617-T62249.99 kelly size rounds to 0 contracts (raw=0.620, bankroll=3.32), skipping

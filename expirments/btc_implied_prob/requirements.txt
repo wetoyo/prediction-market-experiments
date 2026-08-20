@@ -1,0 +1,8 @@
+# requests: Deribit REST calls (fetch_historical) + Kalshi REST calls
+# (discovery, markets).
+requests
+
+# cryptography: used transitively via kalshi_gateway.KalshiTradingClient ->
+# live_execution.py -> live_datastream.py's request signing, when running
+# with --execute against a real (non-dry-run) account.
+cryptography

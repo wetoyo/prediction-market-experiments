@@ -1,0 +1,8 @@
+# requests: Kalshi REST calls (discovery, orderbook) + Coinbase spot feed.
+requests
+
+# websockets + cryptography: used directly by ws_feed.py (order book + BTC/ETH
+# settlement index over Kalshi's authenticated websocket) and transitively via
+# kalshi_gateway.KalshiTradingClient -> live_execution.py -> live_datastream.py.
+websockets
+cryptography
