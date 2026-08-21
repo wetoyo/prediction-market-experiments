@@ -1,4 +1,0 @@
-requests
-websockets
-cryptography
-py-clob-client
