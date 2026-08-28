@@ -49,12 +49,26 @@ echo "runner.py started, PID $RUNNER_PID, logging to $LOG_FILE"
 
 # Kill-switch: same $100 baseline / -15% threshold used throughout this
 # session -- adjust here if the funded balance ever changes.
-RUNNER_PID="$RUNNER_PID" BASELINE_DOLLARS=100 THRESHOLD_PCT=-15 \
-    nohup bash pnl_killswitch.sh > "logs/killswitch_$(date +%Y%m%d_%H%M%S).log" 2>&1 &
-KILLSWITCH_PID=$!
-echo "$KILLSWITCH_PID" > "$KILLSWITCH_PID_FILE"
-disown
-echo "kill-switch armed, PID $KILLSWITCH_PID (baseline \$100, threshold -15%)"
+#
+# RESOLUTION_ALPHA_DISABLE_KILLSWITCH (from .env): when set truthy
+# (1/true/yes/on, case-insensitive) the equity-loss watcher is NOT armed and
+# runner.py runs with no automatic stop. Off by default -- opt out
+# deliberately. See live/.env.example.
+_ks_disabled=$(printf '%s' "${RESOLUTION_ALPHA_DISABLE_KILLSWITCH:-}" | tr '[:upper:]' '[:lower:]')
+case "$_ks_disabled" in
+    1 | true | yes | on)
+        rm -f "$KILLSWITCH_PID_FILE"
+        echo "WARNING: kill-switch DISABLED via RESOLUTION_ALPHA_DISABLE_KILLSWITCH -- runner.py (PID $RUNNER_PID) is running UNSUPERVISED with no automatic equity-loss stop."
+        ;;
+    *)
+        RUNNER_PID="$RUNNER_PID" BASELINE_DOLLARS=100 THRESHOLD_PCT=-15 \
+            nohup bash pnl_killswitch.sh > "logs/killswitch_$(date +%Y%m%d_%H%M%S).log" 2>&1 &
+        KILLSWITCH_PID=$!
+        echo "$KILLSWITCH_PID" > "$KILLSWITCH_PID_FILE"
+        disown
+        echo "kill-switch armed, PID $KILLSWITCH_PID (baseline \$100, threshold -15%)"
+        ;;
+esac
 
 echo ""
 echo "Both running. Close this window freely -- they keep running in the background."

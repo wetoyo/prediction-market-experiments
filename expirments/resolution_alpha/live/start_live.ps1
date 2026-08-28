@@ -113,9 +113,18 @@ Write-Host "runner.py started, PID $($runnerProc.Id), logging to $logFile"
 # live: `kill -0 <that-pid>` returned "No such process" for a runner.py that
 # was demonstrably alive and trading for hours, completely unsupervised. See
 # pnl_killswitch.ps1's header for the full incident writeup.
-$killLogFile = "logs\killswitch_$timestamp.log"
+#
+# RESOLUTION_ALPHA_DISABLE_KILLSWITCH (from .env): when set truthy
+# (1/true/yes/on, case-insensitive) the watcher is NOT armed and runner.py
+# runs with no automatic stop. Off by default -- opt out deliberately. See
+# live\.env.example.
+if ($env:RESOLUTION_ALPHA_DISABLE_KILLSWITCH -match '^\s*(?i:1|true|yes|on)\s*$') {
+    Remove-Item $KillswitchPidFile -ErrorAction SilentlyContinue
+    Write-Host "WARNING: kill-switch DISABLED via RESOLUTION_ALPHA_DISABLE_KILLSWITCH -- runner.py PID $($runnerProc.Id) is running UNSUPERVISED with no automatic equity-loss stop."
+} else {
+    $killLogFile = "logs\killswitch_$timestamp.log"
 
-$currentEquity = & $pythonExe -c @"
+    $currentEquity = & $pythonExe -c @"
 from kalshi_gateway import KalshiTradingClient
 c = KalshiTradingClient()
 balance = float(c.get_balance()['balance_dollars'])
@@ -123,20 +132,21 @@ positions = c.get_positions()['market_positions']
 exposure = sum(float(p['market_exposure_dollars']) for p in positions)
 print(round(balance + exposure, 4))
 "@ 2>$null
-if (-not $currentEquity) {
-    Write-Host "failed to fetch current equity for kill-switch baseline -- aborting, runner.py PID $($runnerProc.Id) is still running, stop it manually if needed"
-    Read-Host "Press Enter to close this window"
-    exit 1
-}
-Write-Host "kill-switch baseline: current equity `$$currentEquity"
+    if (-not $currentEquity) {
+        Write-Host "failed to fetch current equity for kill-switch baseline -- aborting, runner.py PID $($runnerProc.Id) is still running, stop it manually if needed"
+        Read-Host "Press Enter to close this window"
+        exit 1
+    }
+    Write-Host "kill-switch baseline: current equity `$$currentEquity"
 
-$ksProc = Start-Process -FilePath "powershell.exe" -ArgumentList `
-    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "pnl_killswitch.ps1", `
-    "-RunnerPid", $runnerProc.Id, "-BaselineDollars", $currentEquity, "-ThresholdPct", "-10", `
-    "-PythonExe", $pythonExe `
-    -WindowStyle Hidden -RedirectStandardOutput $killLogFile -RedirectStandardError "$killLogFile.stderr" -PassThru
-Set-Content -Path $KillswitchPidFile -Value $ksProc.Id -NoNewline
-Write-Host "kill-switch armed, PID $($ksProc.Id) (baseline `$$currentEquity, threshold -10%)"
+    $ksProc = Start-Process -FilePath "powershell.exe" -ArgumentList `
+        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "pnl_killswitch.ps1", `
+        "-RunnerPid", $runnerProc.Id, "-BaselineDollars", $currentEquity, "-ThresholdPct", "-10", `
+        "-PythonExe", $pythonExe `
+        -WindowStyle Hidden -RedirectStandardOutput $killLogFile -RedirectStandardError "$killLogFile.stderr" -PassThru
+    Set-Content -Path $KillswitchPidFile -Value $ksProc.Id -NoNewline
+    Write-Host "kill-switch armed, PID $($ksProc.Id) (baseline `$$currentEquity, threshold -10%)"
+}
 
 Write-Host ""
 Write-Host "Both running as detached background processes -- closing this window will NOT stop them."

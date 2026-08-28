@@ -71,6 +71,8 @@ Tunable thresholds (entry window, min probability, min edge, position size, poll
 
 **Stop new trades** — kill the process. This is the real kill switch; nothing else in the loop can place an order once the process is dead.
 
+The `start_live` launchers also arm an autonomous watcher (`pnl_killswitch.*`) that kills `runner.py` if account equity drops past a threshold below its funded baseline. Set `RESOLUTION_ALPHA_DISABLE_KILLSWITCH=true` in `.env` to skip arming it (the launcher prints a warning and the runner then runs unsupervised) — off by default.
+
 ```bash
 ./stop_live.sh                                       # or stop_live.bat -- reads .runner.pid / .killswitch.pid
 # or manually:
