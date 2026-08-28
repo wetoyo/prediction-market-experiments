@@ -1,0 +1,12 @@
+# Virtual environment (repo-wide, shared by all experiments)
+.venv/
+venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Local env / secrets
+.env
+*Key.txt
+*.pem

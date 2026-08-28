@@ -33,7 +33,7 @@ param(
     [int]$CheckIntervalSeconds = 30,
     [int]$HeartbeatEveryNChecks = 10,
     [int]$RequiredConsecutiveBreaches = 2,
-    [string]$PythonExe = "C:\Users\wesle\AppData\Local\Programs\Python\Python310\python.exe"
+    [string]$PythonExe = (Join-Path $PSScriptRoot "..\..\..\.venv\Scripts\python.exe")
 )
 
 Set-Location -Path $PSScriptRoot

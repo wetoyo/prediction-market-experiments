@@ -47,7 +47,7 @@ not a replacement for how orders get placed.
 
 Defaults to DRY_RUN (see config.py, order_manager.py): every intended trade
 is logged, not placed. The probability model has now been checked for
-calibration against settled-market history (see ../backtest.py and
+calibration against settled-market history (see ../research/backtest.py and
 ../README.md's Backtest plan) but liquidity/fill economics still have not
 been (Kalshi's REST API has no historical order book), so do not flip
 RESOLUTION_ALPHA_DRY_RUN=false until real order placement has been verified

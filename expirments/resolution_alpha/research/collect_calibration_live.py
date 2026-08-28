@@ -37,7 +37,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "live"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "live"))
 
 import calibration_db  # noqa: E402
 from discovery import find_active_markets  # noqa: E402

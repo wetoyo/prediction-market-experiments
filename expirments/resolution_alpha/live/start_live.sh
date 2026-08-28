@@ -5,6 +5,16 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# Repo-root virtualenv (created once: `python3 -m venv .venv` at the repo
+# root, then `.venv/bin/pip install -r expirments/resolution_alpha/live/requirements.txt`).
+# Three levels up from live/. Falls back to PATH python if it's not there.
+PYTHON="../../../.venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+    echo "warning: repo-root .venv not found at $PYTHON -- falling back to PATH python" >&2
+    PYTHON="$(command -v python || command -v python3)"
+fi
+export PYTHON
+
 RUNNER_PID_FILE=".runner.pid"
 KILLSWITCH_PID_FILE=".killswitch.pid"
 
@@ -18,7 +28,7 @@ source .env
 set +a
 
 LOG_FILE="logs/live_$(date +%Y%m%d_%H%M%S).log"
-nohup "$(command -v python || command -v python3)" runner.py > "$LOG_FILE" 2>&1 &
+nohup "$PYTHON" runner.py > "$LOG_FILE" 2>&1 &
 RUNNER_PID=$!
 echo "$RUNNER_PID" > "$RUNNER_PID_FILE"
 disown

@@ -57,7 +57,16 @@ Get-Content ".env" | ForEach-Object {
 
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $logFile = "logs\live_$timestamp.log"
-$pythonExe = "C:\Users\wesle\AppData\Local\Programs\Python\Python310\python.exe"
+# Repo-root virtualenv (created once at the repo root: `python -m venv .venv`
+# then `pip install -r requirements.txt`). Three levels up from live\.
+$pythonExe = Join-Path $PSScriptRoot "..\..\..\.venv\Scripts\python.exe"
+if (-not (Test-Path $pythonExe)) {
+    Write-Host "venv python not found at $pythonExe"
+    Write-Host "Create it from the repo root:  python -m venv .venv  then  .venv\Scripts\python -m pip install -r expirments\resolution_alpha\live\requirements.txt"
+    Read-Host "Press Enter to close this window"
+    exit 1
+}
+$pythonExe = (Resolve-Path $pythonExe).Path
 
 $runnerProc = Start-Process -FilePath $pythonExe -ArgumentList "runner.py" `
     -WindowStyle Hidden -RedirectStandardOutput $logFile -RedirectStandardError "$logFile.stderr" -PassThru
@@ -115,7 +124,8 @@ Write-Host "kill-switch baseline: current equity `$$currentEquity"
 
 $ksProc = Start-Process -FilePath "powershell.exe" -ArgumentList `
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "pnl_killswitch.ps1", `
-    "-RunnerPid", $runnerProc.Id, "-BaselineDollars", $currentEquity, "-ThresholdPct", "-10" `
+    "-RunnerPid", $runnerProc.Id, "-BaselineDollars", $currentEquity, "-ThresholdPct", "-10", `
+    "-PythonExe", $pythonExe `
     -WindowStyle Hidden -RedirectStandardOutput $killLogFile -RedirectStandardError "$killLogFile.stderr" -PassThru
 Set-Content -Path $KillswitchPidFile -Value $ksProc.Id -NoNewline
 Write-Host "kill-switch armed, PID $($ksProc.Id) (baseline `$$currentEquity, threshold -10%)"

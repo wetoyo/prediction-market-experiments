@@ -37,6 +37,8 @@ THRESHOLD_PCT="${THRESHOLD_PCT:--10.0}"
 CHECK_INTERVAL_SECONDS="${CHECK_INTERVAL_SECONDS:-30}"
 HEARTBEAT_EVERY_N_CHECKS="${HEARTBEAT_EVERY_N_CHECKS:-10}"
 REQUIRED_CONSECUTIVE_BREACHES="${REQUIRED_CONSECUTIVE_BREACHES:-2}"
+# Inherited from start_live.sh (repo-root .venv); falls back to PATH python.
+PYTHON="${PYTHON:-python}"
 
 echo "kill-switch armed (v2, equity-based): runner_pid=${RUNNER_PID} baseline=\$${BASELINE_DOLLARS} threshold=${THRESHOLD_PCT}% consecutive_breaches_required=${REQUIRED_CONSECUTIVE_BREACHES}"
 
@@ -51,7 +53,7 @@ while true; do
         break
     fi
 
-    EQUITY=$(python -c "
+    EQUITY=$("$PYTHON" -c "
 from kalshi_gateway import KalshiTradingClient
 c = KalshiTradingClient()
 balance = float(c.get_balance()['balance_dollars'])
@@ -65,8 +67,8 @@ print(round(balance + exposure, 4))
         continue
     fi
 
-    PCT=$(python -c "print(round((${EQUITY} - ${BASELINE_DOLLARS}) / ${BASELINE_DOLLARS} * 100, 3))")
-    BREACHED=$(python -c "print(1 if (${EQUITY} - ${BASELINE_DOLLARS}) / ${BASELINE_DOLLARS} * 100 <= ${THRESHOLD_PCT} else 0)")
+    PCT=$("$PYTHON" -c "print(round((${EQUITY} - ${BASELINE_DOLLARS}) / ${BASELINE_DOLLARS} * 100, 3))")
+    BREACHED=$("$PYTHON" -c "print(1 if (${EQUITY} - ${BASELINE_DOLLARS}) / ${BASELINE_DOLLARS} * 100 <= ${THRESHOLD_PCT} else 0)")
 
     if [ "${BREACHED}" = "1" ]; then
         consecutive_breaches=$((consecutive_breaches + 1))
