@@ -142,19 +142,38 @@ Each module also has a `__main__` smoke test:
 ## Backtesting
 
 ```bash
-python backtest.py --hours 24 --decision-seconds 90,60,30 --min-prob 0.97
+python backtest.py --hours 24 --tick-seconds 30 --edge-threshold 0.03
 ```
 
 Deribit's public API has no historical implied-vol/option-chain endpoint --
 only current-state snapshots, plus `get_historical_volatility` (BTC's own
-*realized*-vol index, hourly, ~16 days back). `backtest.py` is therefore a
-calibration check, not a replay of the live strategy: same Black-76 `N(d2)`
-formula from `black_scholes.py`, fed that historical realized-vol series
-(as a sigma proxy) and Coinbase 1-minute candles (as a spot/forward proxy)
-against real settled Kalshi BTC markets. A pass means the probability math
-and time-decay handling calibrate against history -- it does not validate
-the live IV-surface edge itself, which only `strategy.py`'s own live
-predictions (see `live/logs/`) can do.
+*realized*-vol index, hourly, ~16 days back). `backtest.py` therefore prices
+against that realized-vol series (as a sigma proxy) and Coinbase 1-minute
+candles (as a spot/forward proxy) instead of a live IV surface, through the
+same Black-76 `N(d2)` formula from `black_scholes.py` that `strategy.py`
+calls -- a pass means the probability math and time-decay handling
+calibrate against history, not that the live IV-surface edge itself is
+real (only `strategy.py`'s own live predictions, see `live/logs/`, can
+validate that).
+
+Unlike Deribit, **Kalshi's own price history is fetchable** -- no
+historical order book, but `kalshi_gateway.fetch_trades` pulls real
+executed fills (public `GET /markets/trades`). So this replays
+`strategy.py`'s actual entry condition, not just a bare probability check:
+for each settled market it walks forward tick-by-tick (`--tick-seconds`
+apart, default 30s -- `strategy.py`'s `--loop` cadence) across the market's
+own real entry window (`open_time` through `close_time -
+MIN_SECONDS_TO_CLOSE`, same gate `strategy.py`'s `_evaluate` uses), pricing
+the model against the last real trade at-or-before each tick, and takes the
+first tick where `edge_after_fee` clears `--edge-threshold` (defaults to
+`config.EDGE_THRESHOLD`) -- same "buy once on the first qualifying tick, no
+re-entry" behavior as `_execute`. Reports win rate, calibration by
+model-probability bucket, and a simple buy-and-hold-to-settlement P&L per
+contract among the fired signals. One thing it can't reconstruct: a real
+historical bid/ask spread -- a trade print is a single executed price, not
+a two-sided book, so that price stands in for both `strategy.py`'s
+`yes_mid` and its `yes_ask`/`yes_bid` fill price, which is optimistic
+versus actually crossing a spread.
 
 ## Limitations
 

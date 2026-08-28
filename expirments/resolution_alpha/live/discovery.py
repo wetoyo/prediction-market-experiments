@@ -68,15 +68,30 @@ def _extract_strike(market: dict) -> tuple[str, float] | None:
     return None
 
 
-def find_crypto_interval_series() -> list[dict]:
+def find_crypto_interval_series(allowed_underlyings: frozenset[str] | None = None) -> list[dict]:
     """Returns Crypto-category series on a recurring interval cadence, with a
     resolvable underlying symbol (i.e. one we can get a spot price for).
+
+    `allowed_underlyings`, when given, further restricts the result to series
+    whose underlying is in that set. The live loop passes
+    config.TRUSTED_SETTLEMENT_UNDERLYINGS here unless
+    config.TRADE_UNSAFE_MARKETS is on, so the ~20 crypto series it would only
+    ever skip aren't even discovered (and so never get spot-polled,
+    order-book-subscribed, or evaluated). None means no such restriction --
+    every qualifying series is returned, the original behavior.
     """
     series = fetch_series(category="Crypto")
-    return [
-        s for s in series
-        if s.get("frequency") in INTERVAL_FREQUENCIES and _extract_underlying(s)
-    ]
+    out = []
+    for s in series:
+        if s.get("frequency") not in INTERVAL_FREQUENCIES:
+            continue
+        underlying = _extract_underlying(s)
+        if underlying is None:
+            continue
+        if allowed_underlyings is not None and underlying not in allowed_underlyings:
+            continue
+        out.append(s)
+    return out
 
 
 def _fetch_markets_with_retry(series_ticker: str, max_attempts: int = 3) -> list[dict] | None:
@@ -100,14 +115,18 @@ def _fetch_markets_with_retry(series_ticker: str, max_attempts: int = 3) -> list
     return None
 
 
-def find_active_markets() -> list[ActiveMarket]:
+def find_active_markets(allowed_underlyings: frozenset[str] | None = None) -> list[ActiveMarket]:
     """Discovers every currently-open market across all recurring crypto
     interval series. Safe to call repeatedly -- each call is a fresh scan
     with no caching, so freshly-opened market instances show up on the next
     call automatically.
+
+    `allowed_underlyings` is forwarded to find_crypto_interval_series -- see
+    there. Pass config.TRUSTED_SETTLEMENT_UNDERLYINGS (the live loop's
+    default) to scan only trusted underlyings; None scans every one.
     """
     active: list[ActiveMarket] = []
-    for series in find_crypto_interval_series():
+    for series in find_crypto_interval_series(allowed_underlyings):
         underlying = _extract_underlying(series)
         # Kalshi's declared cadence, not (close_time - open_time): hourly series
         # pre-list occurrences days ahead, so that delta reflects how far in

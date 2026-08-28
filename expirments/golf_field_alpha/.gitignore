@@ -1,0 +1,6 @@
+__pycache__/
+.env
+backtest_runs/
+positions_state.json
+live/logs/
+live/.runner.pid

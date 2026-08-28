@@ -169,7 +169,7 @@ EXIT_Z_SCORE_DROP_THRESHOLD = _float_env("RESOLUTION_ALPHA_EXIT_Z_SCORE_DROP_THR
 # actual edge instead of a flat number regardless of edge strength. Raise
 # this deliberately as account balance grows, not as a way to make Kelly
 # sizing bigger.
-MAX_CONTRACTS_PER_MARKET = _float_env("RESOLUTION_ALPHA_TARGET_CONTRACTS", 10)
+MAX_CONTRACTS_PER_MARKET = _float_env("RESOLUTION_ALPHA_TARGET_CONTRACTS", 100)
 
 # Max total contracts committed across all markets within a 15-minute wall-clock
 # slot. A coarse global cap, not a precise per-market-interval budget -- see
@@ -195,6 +195,27 @@ MAX_CYCLE_CONTRACTS = _float_env("RESOLUTION_ALPHA_MAX_CYCLE_CONTRACTS", 100)
 # while pulling the implied fraction back to something the ceiling isn't
 # guaranteed to clip on every single trade.
 KELLY_FRACTION = _float_env("RESOLUTION_ALPHA_KELLY_FRACTION", 0.5)
+
+# When enabled, bypasses Kelly/edge-based sizing (_size_for_edge in runner.py)
+# entirely: each trade instead just takes the largest whole-contract size
+# supported by whichever binds first -- the book's own available depth for
+# the favored side, or what the account's available cash can actually afford
+# at each level's price. NOT clipped to MAX_CONTRACTS_PER_MARKET or
+# MAX_CYCLE_CONTRACTS (fixed 2026-08-25 in two steps, both live-verified: the
+# per-market ceiling exists to backstop Kelly/edge sizing against a bad
+# probability estimate, and the cycle-wide one exists to backstop this mode's
+# lack of any edge check against overcommitting a single 15-min window --
+# neither is relevant to what this mode is actually for, and clipping to
+# either one just made fills land at exactly that ceiling whenever the book
+# had more, which looked like -- but wasn't -- a real liquidity reading. See
+# the max_contracts branch in runner.py's trade-sizing call site for the
+# current logic). Still subject to every other entry gate above -- this only
+# changes how big the size is, not whether a trade is allowed at all. No
+# MIN_EDGE_DOLLARS or KELLY_FRACTION check is applied to the size itself in
+# this mode, and now nothing backstops position size except real book depth
+# and actual bankroll_dollars -- opt in deliberately (RESOLUTION_ALPHA_MAX_SIZE_MODE=true
+# in .env), off by default.
+MAX_SIZE_MODE = _bool_env("RESOLUTION_ALPHA_MAX_SIZE_MODE", False)
 
 # --- Model-vs-market sanity gates, added 2026-08-06 after a live incident ---
 #
@@ -263,6 +284,19 @@ DISCOVERY_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_DISCOVERY_INTERVAL_SEC
 # candidates aren't trading is worse. See runner.py's _log_stats_summary.
 STATS_LOG_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_STATS_LOG_INTERVAL_SECONDS", 60.0)
 
+# Whether to INFO-log the full per-candidate detail line ("<ticker> <side>
+# left=..s spot=.. strike=.. model_prob=.. eff_prob=.. z=.. fill_price=..
+# edge/contract=..") for candidates that DON'T end up trading. Added
+# 2026-08-27: that line was firing at INFO for every candidate that reached
+# the sizing stage and then failed the final MIN_EDGE_DOLLARS check, so a
+# quiet-but-active window filled the log with dozens of near-miss
+# "edge/contract=-0.00xx" lines per minute -- exactly the noise the 60s
+# eval summary's low_edge counter already accounts for. Default OFF: the
+# detail line still logs at INFO whenever it leads to an actual order (and
+# at DEBUG otherwise, so -v / a lower root level can still recover it).
+# Turn on to see every near miss inline again.
+LOG_NONTRADING_CANDIDATES = _bool_env("RESOLUTION_ALPHA_LOG_NONTRADING_CANDIDATES", False)
+
 # --- Lightweight mode (added 2026-08-16 per explicit user request, revised
 # same day into two phases after the first cut sleeping right up until
 # LIGHTWEIGHT_TRADING_WINDOW_SECONDS turned out to leave no time to warm up
@@ -301,7 +335,7 @@ STATS_LOG_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_STATS_LOG_INTERVAL_SEC
 # of the loop's visibility and gives volatility history/subscriptions less
 # lead time than a fully continuous run would, so it should be an explicit
 # opt-in, not the default posture.
-LIGHTWEIGHT_MODE = _bool_env("RESOLUTION_ALPHA_LIGHTWEIGHT_MODE", True)
+LIGHTWEIGHT_MODE = _bool_env("RESOLUTION_ALPHA_LIGHTWEIGHT_MODE", False)
 
 # 180 seconds = 3 minutes, per explicit user request ("up the 90 seconds to 3
 # minutes instead, but have the first half just poll for the volatility
@@ -379,3 +413,27 @@ KALSHI_UNDERLYING_TO_COINBASE_PRODUCT = {
 # Until proxy basis risk is actually measured (see backfill_calibration.py),
 # only trade underlyings backed by ws_feed's real index feed.
 TRUSTED_SETTLEMENT_UNDERLYINGS = _set_env("RESOLUTION_ALPHA_TRUSTED_UNDERLYINGS", ("BTC", "ETH"))
+
+# Master switch for whether the loop touches "unsafe" markets at all -- any
+# underlying NOT in TRUSTED_SETTLEMENT_UNDERLYINGS, i.e. one fed by
+# spot_feed.py's Coinbase proxy rather than ws_feed's real CF Benchmarks
+# settlement index (see TRUSTED_SETTLEMENT_UNDERLYINGS's docstring above: all
+# 3 live losses so far landed on proxy-fed underlyings).
+#
+# OFF (default): discovery.find_active_markets is asked for trusted
+# underlyings ONLY, so the ~20 other live crypto series (SOL, XRP, DOGE, BNB,
+# HYPE, NEAR, ZEC, ...) are never discovered -- and therefore never
+# spot-polled, never order-book-subscribed, and never handed to
+# evaluate_and_maybe_trade. Before this flag existed the loop still
+# discovered and iterated all ~1,600 markets every tick just to skip the
+# untrusted ones one by one (plus a Coinbase REST poll per untrusted
+# underlying every POLL_INTERVAL_SECONDS) -- pure wasted compute for markets
+# that could never clear the untrusted-underlying gate anyway.
+#
+# ON: discovery returns every qualifying underlying and
+# evaluate_and_maybe_trade's untrusted-underlying gate is lifted, so unsafe
+# markets are actually scanned and traded -- subject to every other entry
+# gate unchanged (the dynamic entry window in
+# _dynamic_entry_window_seconds still shrinks toward zero for non-trusted
+# underlyings). Opt in deliberately; this re-exposes the proxy basis risk.
+TRADE_UNSAFE_MARKETS = _bool_env("RESOLUTION_ALPHA_TRADE_UNSAFE_MARKETS", False)

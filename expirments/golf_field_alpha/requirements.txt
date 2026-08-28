@@ -1,0 +1,8 @@
+# requests: all Kalshi REST calls (series/markets/trades discovery, order
+# placement via kalshi_gateway).
+requests
+
+# cryptography: used transitively via kalshi_gateway.KalshiTradingClient ->
+# live_execution.py -> live_datastream.py's request signing, when running
+# --execute against a real (non-dry-run) account.
+cryptography

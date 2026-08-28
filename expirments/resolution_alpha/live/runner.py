@@ -2,7 +2,10 @@
 
 Cycle (see ../README.md and ./README.md for the full design):
   1. Discover currently-open recurring crypto interval markets (all series,
-     not a hardcoded list -- see discovery.py).
+     not a hardcoded list -- see discovery.py). By default only underlyings
+     in config.TRUSTED_SETTLEMENT_UNDERLYINGS are discovered at all; set
+     config.TRADE_UNSAFE_MARKETS to also scan (and trade) proxy-fed
+     underlyings -- see config.TRADE_UNSAFE_MARKETS and _underlying_scan_filter.
   2. Every tick, refresh spot/index data for every underlying currently in
      play, so volatility/history is warm *before* a market enters its entry
      window (polling only when inside the window would start the vol
@@ -119,6 +122,20 @@ def _log_despite_lightweight_mode(level: int, msg: str, *args) -> None:
         logger.log(level, msg, *args)
     finally:
         logging.disable(logging.CRITICAL)
+
+
+def _underlying_scan_filter() -> frozenset | None:
+    """Which underlyings discovery should scan for this run: None (every
+    qualifying crypto underlying) when config.TRADE_UNSAFE_MARKETS is on,
+    else just config.TRUSTED_SETTLEMENT_UNDERLYINGS. Restricting it here is
+    what keeps the loop from spending discovery calls, per-tick Coinbase spot
+    polls, ws order-book subscriptions, and evaluate_and_maybe_trade
+    iterations on markets the untrusted-underlying gate would only skip
+    anyway -- see config.TRADE_UNSAFE_MARKETS's docstring.
+    """
+    if config.TRADE_UNSAFE_MARKETS:
+        return None
+    return config.TRUSTED_SETTLEMENT_UNDERLYINGS
 
 
 def _cycle_key(now: datetime) -> int:
@@ -240,6 +257,44 @@ def _size_for_edge(
     return cum_size
 
 
+def _size_for_max_available(
+    orderbook_fp: dict,
+    side: str,
+    bankroll_dollars: float,
+    max_contracts: float,
+) -> float:
+    """config.MAX_SIZE_MODE's sizing: walks the book from best price outward,
+    same as _size_for_edge, but with no MIN_EDGE_DOLLARS or Kelly-cap check --
+    takes the largest whole-contract size the book/cash actually support,
+    period. Stops at whichever binds first: `max_contracts` (already applied
+    via the walk_book(..., max_contracts) probe below -- the caller passes
+    float("inf") here, NOT MAX_CONTRACTS_PER_MARKET or the cycle-wide
+    remaining_budget, since the point of this mode is to measure real depth
+    rather than stay clipped to some other ceiling -- see the 2026-08-25 note
+    at the call site), a level running out of depth, or bankroll_dollars
+    running out of affordable cost.
+    """
+    probe = walk_book(orderbook_fp, side, max_contracts)
+    if probe.avg_price is None:
+        return 0.0
+
+    cum_size = 0.0
+    cum_cost = 0.0
+    for price, level_size in probe.levels_used:
+        if price <= 0:
+            break
+        level_size_int = int(level_size)
+        affordable = int((bankroll_dollars - cum_cost) // price)
+        take = min(level_size_int, affordable)
+        if take <= 0:
+            break
+        cum_size += take
+        cum_cost += take * price
+        if take < level_size_int:
+            break  # cash exhausted mid-level; deeper levels only cost more
+    return cum_size
+
+
 _STAT_KEYS = (
     "in_window", "traded",
     "skip_untrusted_underlying",
@@ -314,7 +369,7 @@ def _lightweight_trading_phase(now_ts: float) -> bool:
     return seconds_to_boundary <= config.LIGHTWEIGHT_TRADING_WINDOW_SECONDS
 
 
-def _dynamic_entry_window_seconds(market_probability: float) -> float:
+def _dynamic_entry_window_seconds(underlying: str, market_probability: float) -> float:
     """How close to close_time a market must be to trade *right now*, given
     the MARKET's own current top-of-book price for the favored side (not
     effective_prob -- see config.ENTRY_WINDOW_EXPONENT's docstring for why:
@@ -324,7 +379,23 @@ def _dynamic_entry_window_seconds(market_probability: float) -> float:
     == 1.0) down to 0 (at market_probability <= config.ENTRY_WINDOW_PRICE_FLOOR --
     a separate, tighter knob than the hard MIN_MARKET_IMPLIED_PROBABILITY gate
     the caller already enforced; see config.ENTRY_WINDOW_PRICE_FLOOR's docstring).
+
+    Bypassed entirely for underlyings in config.TRUSTED_SETTLEMENT_UNDERLYINGS
+    (added 2026-08-25 per explicit user request): the shrink-toward-zero logic
+    exists to protect against acting too early on a market whose own price
+    isn't yet confident, but every underlying that clears
+    TRUSTED_SETTLEMENT_UNDERLYINGS's upstream gate (see
+    evaluate_and_maybe_trade -- currently just BTC/ETH) is backed by
+    ws_feed's real CF Benchmarks settlement index rather than a Coinbase
+    proxy, which is exactly the distinction that gate exists to draw (see its
+    own docstring: all 3 live losses landed on proxy-fed underlyings, BTC/ETH
+    went 32/32). For those, always use the full window instead -- no need to
+    also earn extra entry time via price confidence on top of an
+    already-trusted feed.
     """
+    if underlying in config.TRUSTED_SETTLEMENT_UNDERLYINGS:
+        return config.ENTRY_WINDOW_SECONDS
+
     floor = config.ENTRY_WINDOW_PRICE_FLOOR
     if market_probability <= floor:
         return 0.0
@@ -465,7 +536,10 @@ def _diagnostic_skip_reasons(
 
     already_committed = cycle_state.get("contracts_committed", 0.0)
     remaining_budget = config.MAX_CYCLE_CONTRACTS - already_committed
-    if remaining_budget <= 0:
+    # Mirrors the real gate's MAX_SIZE_MODE override (2026-08-25) -- otherwise
+    # this diagnostic would report budget_exhausted for trades the real path
+    # no longer blocks on it for.
+    if remaining_budget <= 0 and not config.MAX_SIZE_MODE:
         reasons.append("budget_exhausted")
 
     orderbook_fp = ws_feed.get_orderbook_fp(market.ticker)
@@ -482,7 +556,7 @@ def _diagnostic_skip_reasons(
 
     effective_probability = min(estimate.favored_probability, top_of_book.avg_price + config.MAX_TRUSTED_EDGE_PROB)
 
-    dynamic_window = _dynamic_entry_window_seconds(top_of_book.avg_price)
+    dynamic_window = _dynamic_entry_window_seconds(market.underlying, top_of_book.avg_price)
     if seconds_left > dynamic_window:
         reasons.append("dynamic_window")
 
@@ -632,11 +706,16 @@ async def evaluate_and_maybe_trade(
         return
     stats["in_window"] += 1
 
-    if market.underlying not in config.TRUSTED_SETTLEMENT_UNDERLYINGS:
+    if market.underlying not in config.TRUSTED_SETTLEMENT_UNDERLYINGS and not config.TRADE_UNSAFE_MARKETS:
         # See config.TRUSTED_SETTLEMENT_UNDERLYINGS's docstring: all 3 losses
         # in live/logs/samples.db landed on Coinbase-proxy-fed underlyings
         # (BNB, NEAR), never on BTC/ETH's real CF Benchmarks index feed.
-        # Checked before any spot/vol work -- cheapest possible skip.
+        # Checked before any spot/vol work -- cheapest possible skip. With
+        # config.TRADE_UNSAFE_MARKETS off, discovery already filters these
+        # out (see _underlying_scan_filter), so this is a belt-and-braces
+        # backstop for a stray untrusted market rather than the primary
+        # filter; with it on, unsafe markets are meant to trade, so the gate
+        # lifts entirely.
         logger.debug(
             "%s (%s) not in TRUSTED_SETTLEMENT_UNDERLYINGS, skipping",
             market.ticker, market.underlying,
@@ -718,7 +797,13 @@ async def evaluate_and_maybe_trade(
 
     already_committed = cycle_state.setdefault("contracts_committed", 0.0)
     remaining_budget = config.MAX_CYCLE_CONTRACTS - already_committed
-    if remaining_budget <= 0:
+    # MAX_SIZE_MODE overrides MAX_CYCLE_CONTRACTS entirely (2026-08-25, see
+    # the max_contracts branch below) -- so once a cycle's nominal budget is
+    # "used up" this must not skip either, or every trade after the first in
+    # a cycle would still be silently blocked by the very knob this mode is
+    # supposed to ignore. contracts_committed is still tracked (below, and at
+    # the fill-recording site) purely for stats/logging in this mode.
+    if remaining_budget <= 0 and not config.MAX_SIZE_MODE:
         logger.debug("cycle contract budget exhausted, skipping %s", market.ticker)
         stats["skip_budget_exhausted"] += 1
         _record_skip_sample("budget_exhausted")
@@ -779,7 +864,7 @@ async def evaluate_and_maybe_trade(
     # floor only qualifies an instant before close; a market already pricing
     # the favored side near-certain can trade as early as the full window
     # allows.
-    dynamic_window = _dynamic_entry_window_seconds(top_of_book.avg_price)
+    dynamic_window = _dynamic_entry_window_seconds(market.underlying, top_of_book.avg_price)
     if seconds_left > dynamic_window:
         logger.debug(
             "%s market_price=%.4f only justifies entry within %.0fs of close, %.0fs still left, skipping for now",
@@ -828,7 +913,22 @@ async def evaluate_and_maybe_trade(
 
     market_fills = cycle_state.setdefault("market_fills", {})
     already_filled_this_market = market_fills.get(market.ticker, 0.0)
-    max_contracts = min(config.MAX_CONTRACTS_PER_MARKET - already_filled_this_market, remaining_budget)
+    # MAX_SIZE_MODE's whole point is to discover how much the book/cash
+    # actually support, so it isn't clipped to MAX_CONTRACTS_PER_MARKET (that
+    # ceiling exists to backstop Kelly/edge sizing against a bad probability
+    # estimate -- irrelevant here, since this mode already sizes off real
+    # depth/cash with no edge check) OR to MAX_CYCLE_CONTRACTS (2026-08-25,
+    # confirmed live: with the per-market ceiling fixed, fills just started
+    # landing on the cycle-wide ceiling instead -- same round-number symptom,
+    # different knob. Verified by temporarily raising MAX_CYCLE_CONTRACTS to
+    # 100 against a <100 account balance and watching a fill land at the real
+    # cash-bound size instead of 100). The only backstops left in this mode
+    # are real book depth and actual bankroll_dollars, both enforced inside
+    # _size_for_max_available itself. See config.MAX_SIZE_MODE's docstring.
+    if config.MAX_SIZE_MODE:
+        max_contracts = float("inf")
+    else:
+        max_contracts = min(config.MAX_CONTRACTS_PER_MARKET - already_filled_this_market, remaining_budget)
     if max_contracts < 1:
         logger.debug(
             "cycle/market ceiling leaves room for <1 contract for %s (already_filled=%.2f), skipping",
@@ -842,10 +942,13 @@ async def evaluate_and_maybe_trade(
     # prefix that's still Kelly/edge-justified at its own cumulative average
     # price -- see _size_for_edge's docstring for why a fixed target size
     # sized off a single top-of-book price isn't correct once the book thins.
-    raw_size = _size_for_edge(
-        orderbook_fp, estimate.favored_side, effective_probability,
-        bankroll, config.KELLY_FRACTION, max_contracts,
-    )
+    if config.MAX_SIZE_MODE:
+        raw_size = _size_for_max_available(orderbook_fp, estimate.favored_side, bankroll, max_contracts)
+    else:
+        raw_size = _size_for_edge(
+            orderbook_fp, estimate.favored_side, effective_probability,
+            bankroll, config.KELLY_FRACTION, max_contracts,
+        )
     target_size = math.floor(raw_size)
     if target_size < 1:
         logger.debug(
@@ -879,7 +982,22 @@ async def evaluate_and_maybe_trade(
     # z_favored still logged (not gated on anymore -- see the removal note
     # above evaluate_and_maybe_trade's z_favored computation) so it's
     # available for reference/debugging without a dedicated gate to hang it on.
-    logger.info(
+    #
+    # The final edge gate. Computed before the detail line below only so that
+    # line can pick its level: a candidate that clears MIN_EDGE_DOLLARS is
+    # about to place an order (nothing between here and buy_favored_side can
+    # skip it), so it's worth an INFO line; one that doesn't is a near miss
+    # the 60s eval summary's low_edge counter already accounts for, and at
+    # INFO it floods a quiet-but-active window with dozens of
+    # "edge/contract=-0.00xx" lines a minute. Flooring target_size down from
+    # raw_size can land right on the threshold boundary, so this genuinely
+    # fires in normal operation, not just rare cases.
+    will_trade = edge_per_contract >= config.MIN_EDGE_DOLLARS
+
+    _candidate_log = (
+        logger.info if (will_trade or config.LOG_NONTRADING_CANDIDATES) else logger.debug
+    )
+    _candidate_log(
         "%s %s left=%.0fs spot=%.6f strike=%.6f model_prob=%.4f eff_prob=%.4f z=%.2f "
         "fill_price=%.4f filled=%.2f/%.2f (raw_kelly_size=%.2f) edge/contract=%.4f already_filled=%.2f "
         "dyn_window=%.0fs book=%s",
@@ -889,10 +1007,7 @@ async def evaluate_and_maybe_trade(
         raw_size, edge_per_contract, already_filled_this_market, dynamic_window, orderbook_source,
     )
 
-    if edge_per_contract < config.MIN_EDGE_DOLLARS:
-        # Can happen in rare cases where flooring target_size down from raw_size
-        # shifts things right at the threshold boundary -- skip rather than trade
-        # at a technically-failing edge.
+    if not will_trade:
         stats["skip_low_edge"] += 1
         _record_skip_sample("low_edge")
         return
@@ -922,9 +1037,28 @@ async def evaluate_and_maybe_trade(
         _record_skip_sample("order_placement_failed")
         raise
 
+    # Diagnostic only, MAX_SIZE_MODE fills -- re-walks the same orderbook_fp
+    # with an effectively unlimited probe, purely to report how much book
+    # depth actually existed beyond what we took. Added 2026-08-25 after
+    # fills kept landing at whatever the current ceiling happened to be
+    # (MAX_CONTRACTS_PER_MARKET=20, then MAX_CYCLE_CONTRACTS=30) -- both since
+    # fixed, so max_contracts is now float("inf") in this mode (see the call
+    # site above) and the only real backstops left are book depth and
+    # bankroll_dollars. This line is what actually proves that instead of
+    # asking for trust. One extra walk_book call, only on an actual trade
+    # (not every candidate evaluation), so it never touches the hot loop above
+    # and never affects sizing/order placement, which already completed.
+    depth_note = ""
+    if config.MAX_SIZE_MODE:
+        true_depth = walk_book(orderbook_fp, estimate.favored_side, 1_000_000.0)
+        if true_depth.filled_size > fill.filled_size + 1e-9:
+            depth_note = " [book had %.2f available -- cash-bound, not liquidity-bound]" % true_depth.filled_size
+        else:
+            depth_note = " [book depth itself was the true bind]"
+
     _log_despite_lightweight_mode(
-        logging.INFO, "%s entry submitted: %s x%.2f @ boundary %.4f (edge/contract=%.4f)",
-        market.ticker, estimate.favored_side, fill.filled_size, fill.levels_used[-1][0], edge_per_contract,
+        logging.INFO, "%s entry submitted: %s x%.2f @ boundary %.4f (edge/contract=%.4f)%s",
+        market.ticker, estimate.favored_side, fill.filled_size, fill.levels_used[-1][0], edge_per_contract, depth_note,
     )
 
     stats["traded"] += 1
@@ -1000,7 +1134,7 @@ async def run_forever() -> None:
 
             if now_ts - last_discovery >= config.DISCOVERY_INTERVAL_SECONDS:
                 try:
-                    active_markets = await asyncio.to_thread(find_active_markets)
+                    active_markets = await asyncio.to_thread(find_active_markets, _underlying_scan_filter())
                     logger.info("discovered %d active markets", len(active_markets))
                 except Exception:
                     logger.exception("discovery failed, keeping previous market list")

@@ -2,7 +2,8 @@
 submodule (Clients/Kalshi). That package uses bare same-directory imports
 (e.g. `from live_datastream import ...` inside live_execution.py), so we add
 its directory to sys.path rather than importing it as a proper package.
-Mirrors ../resolution_alpha/live/kalshi_gateway.py's approach.
+Mirrors ../btc_implied_prob/kalshi_gateway.py and
+../resolution_alpha/live/kalshi_gateway.py.
 """
 
 import sys
@@ -14,7 +15,14 @@ _KALSHI_CLIENT_DIR = _REPO_ROOT / "prediction_market_scraper" / "Clients" / "Kal
 if str(_KALSHI_CLIENT_DIR) not in sys.path:
     sys.path.insert(0, str(_KALSHI_CLIENT_DIR))
 
-from fetch_historical import BASE_URL, fetch_markets, fetch_orderbook, fetch_series, fetch_trades  # noqa: E402
+from fetch_historical import (  # noqa: E402
+    BASE_URL,
+    _get_with_retry,
+    fetch_markets,
+    fetch_orderbook,
+    fetch_series,
+    fetch_trades,
+)
 from live_execution import KalshiTradingClient  # noqa: E402
 
 import requests  # noqa: E402
@@ -30,5 +38,12 @@ def fetch_market(ticker: str) -> dict:
 
 
 __all__ = [
-    "fetch_series", "fetch_markets", "fetch_orderbook", "fetch_market", "fetch_trades", "KalshiTradingClient",
+    "BASE_URL",
+    "_get_with_retry",
+    "fetch_series",
+    "fetch_markets",
+    "fetch_orderbook",
+    "fetch_market",
+    "fetch_trades",
+    "KalshiTradingClient",
 ]

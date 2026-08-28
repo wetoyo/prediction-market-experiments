@@ -9,6 +9,12 @@ Endpoint verified against Kalshi's current V2 API docs on 2026-08-05
 (GET) are both correct -- an earlier note here claiming a path mismatch was
 wrong and has been removed.
 
+The *host* was a real bug, found live 2026-08-27: `/portfolio/events/orders`
+is only served from `external-api.kalshi.com`, and the read-only portfolio
+endpoints' host (`api.elections.kalshi.com`) 404s on it. Fixed in
+live_execution.py's BASE_URL -- see that module and docs/reference/
+kalshi-client.md.
+
 What *was* a real bug, also caught while verifying against the docs before
 this endpoint check turned into a live test order: Kalshi's order `side`
 field is always `"bid"` (buy YES) or `"ask"` (sell YES, i.e. economically
