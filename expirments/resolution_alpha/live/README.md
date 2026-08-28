@@ -2,6 +2,8 @@
 
 Runtime component of [resolution_alpha](../README.md). Discovers every open recurring crypto interval market on Kalshi (no hardcoded BTC/ETH list), monitors each one as it approaches close, and buys the favored side late in the window when the order book supports it. **Defaults to dry-run** (logs intended trades, places nothing). See Status below.
 
+> **Layout:** this folder holds only the launcher scripts (`start_live.*`, `stop_live.*`, `pnl_killswitch.*`) and `.env`, matching `../../btc_implied_prob/live` and `../../golf_field_alpha/live`. Every module named below (`runner.py`, `discovery.py`, `probability.py`, `config.py`, …) lives one level up in `../`. The launchers `cd` into this folder, then run `../runner.py` with the repo-root `.venv` and the experiment root on `PYTHONPATH`.
+
 Runs on `asyncio` and talks to Kalshi's authenticated websocket (`ws_feed.py`) for order books and, for BTC/ETH, the actual settlement index — falling back to REST polling (the original design) wherever the socket has no data yet, e.g. no credentials configured, or another underlying with no known index id. Order placement is unchanged either way: `order_manager.py` wraps `KalshiTradingClient` from `prediction_market_scraper/Clients/Kalshi/live_execution.py`, the same authenticated REST trading client as before.
 
 ## Pre-flight checklist (read this before running, especially before a real-money run)
@@ -16,7 +18,7 @@ Runs on `asyncio` and talks to Kalshi's authenticated websocket (`ws_feed.py`) f
 
 ## What's actually running here (confirmed against the live API on 2026-08-05 unless noted)
 
-- `discovery.py` — scans `category="Crypto"` series, keeps ones with `frequency` in `("fifteen_min", "thirty_min", "hourly")`, and pulls every currently-open market instance in them. Confirmed live: ~1,660 open markets across BTC, ETH, SOL, XRP, DOGE, BNB, HYPE, NEAR, ZEC at 15m and 60m cadences. No 30m crypto series existed at test time; the frequency is kept in the filter for when one appears. Retries per-series on HTTP 429 (added after a live dry-run + `../research/backtest.py` run concurrently exhausted Kalshi's public rate limit and killed a discovery cycle) instead of aborting the whole discovery pass.
+- `discovery.py` — scans `category="Crypto"` series, keeps ones with `frequency` in `("fifteen_min", "thirty_min", "hourly")`, and pulls every currently-open market instance in them. Confirmed live: ~1,660 open markets across BTC, ETH, SOL, XRP, DOGE, BNB, HYPE, NEAR, ZEC at 15m and 60m cadences. No 30m crypto series existed at test time; the frequency is kept in the filter for when one appears. Retries per-series on HTTP 429 (added after a live dry-run + `../backtest.py` run concurrently exhausted Kalshi's public rate limit and killed a discovery cycle) instead of aborting the whole discovery pass.
   - "Range"-type markets (`strike_type == "between"`) are skipped — v1 only trades single-strike above/below markets.
   - **Scoped to trusted underlyings by default.** `find_active_markets` is called with `config.TRUSTED_SETTLEMENT_UNDERLYINGS` (BTC/ETH) unless `RESOLUTION_ALPHA_TRADE_UNSAFE_MARKETS=true`, so the ~20 other live crypto series aren't discovered at all — no spot poll, no order-book subscription, no per-tick evaluation for markets the untrusted-underlying gate would only skip anyway. Turn the flag on to scan and trade every underlying (re-exposes Coinbase-proxy basis risk — see Settlement mechanics).
   - Kalshi pre-lists hourly markets days ahead of their actual close; `interval_minutes` is read from the series' declared `frequency`, not derived from `close_time - open_time` (that delta reflects listing lead time, not settlement cadence, for these).
@@ -50,10 +52,12 @@ So settlement is a **60-second trailing average** of CF Benchmarks' Real Time In
 
 ```
 cd expirments/resolution_alpha/live
-pip install -r requirements.txt
+pip install -r ../requirements.txt     # or use the repo-root .venv (see below)
 cp .env.example .env   # edit, then export the vars into your shell
-python runner.py
+./start_live.sh        # or start_live.bat on Windows; runs ../runner.py detached
 ```
+
+`start_live.*` uses the repo-root `.venv` (`python -m venv .venv` at the repo root, then `.venv/bin/pip install -r expirments/resolution_alpha/requirements.txt`), falling back to PATH python if it's missing. To run the loop in the foreground instead: `cd ..` then `python runner.py`.
 
 Defaults to dry-run — every intended trade is logged (`[DRY RUN] would BUY ...`), nothing is placed. To place real orders: set `RESOLUTION_ALPHA_DRY_RUN=false` and `KALSHI_API_KEY_ID` / `KALSHI_PRIVATE_KEY_PATH`. **Don't do that yet** — see Status. Without those two credentials the websocket feed stays disabled and everything runs over REST/Coinbase, same as before `ws_feed.py` existed.
 
@@ -68,15 +72,17 @@ Tunable thresholds (entry window, min probability, min edge, position size, poll
 **Stop new trades** — kill the process. This is the real kill switch; nothing else in the loop can place an order once the process is dead.
 
 ```bash
-ps aux | grep "python runner.py" | grep -v grep    # find PID
+./stop_live.sh                                       # or stop_live.bat -- reads .runner.pid / .killswitch.pid
+# or manually:
+ps aux | grep "runner.py" | grep -v grep            # find PID
 kill <PID>
 ```
 
 **Cancel any orders still resting** (not yet filled) — killing the process does *not* do this automatically:
 
 ```bash
-cd expirments/resolution_alpha/live
-set -a && source .env && set +a
+cd expirments/resolution_alpha        # modules live at the experiment root now
+set -a && source live/.env && set +a
 python -c "
 from kalshi_gateway import KalshiTradingClient
 client = KalshiTradingClient()

@@ -3,8 +3,8 @@
 Kalshi settles these markets on a trailing SETTLEMENT_AVERAGE_SECONDS-second
 average of CF Benchmarks' Real Time Index ending at close_time, compared
 against a strike captured the same way at open_time (confirmed via a live
-market's `rules_primary` text on 2026-08-04 -- see ../README.md and
-./README.md). That means the "decisive moment" isn't an instantaneous last
+market's `rules_primary` text on 2026-08-04 -- see README.md and
+live/README.md). That means the "decisive moment" isn't an instantaneous last
 tick: once inside the last SETTLEMENT_AVERAGE_SECONDS seconds, part of the
 settlement average is already locked in and only the remaining seconds are
 still stochastic, which shrinks effective variance faster than a naive
@@ -22,7 +22,7 @@ Two regimes:
     price.
 
 The realized-vol estimate is a simple stdev of log returns. Both this and
-the settlement-window blend are flagged in ../README.md's backtest plan as
+the settlement-window blend are flagged in README.md's backtest plan as
 things to validate/refine against real resolved-market data before sizing
 up -- this module is a reasonable starting point, not a validated model.
 """

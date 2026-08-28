@@ -9,7 +9,7 @@ against resting NO bids (a NO bid at price p is equivalent to a YES ask at
 2026-08-04 (KXBTC15M market, levels sorted ascending by price).
 
 This is the liquidity-aware fill model called out as critical in
-../README.md: it walks displayed depth for a target size rather than
+README.md: it walks displayed depth for a target size rather than
 assuming a fill at best price, so thin end-of-window books show up as
 partial (or zero) fills instead of phantom liquidity.
 """

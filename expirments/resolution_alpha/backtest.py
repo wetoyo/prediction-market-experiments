@@ -33,7 +33,7 @@ from pathlib import Path
 
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "live"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import INTERVAL_FREQUENCIES  # noqa: E402
 from discovery import _extract_strike, _extract_underlying, _parse_time  # noqa: E402

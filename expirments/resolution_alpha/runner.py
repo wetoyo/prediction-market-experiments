@@ -1,6 +1,6 @@
 """Main entrypoint for the resolution_alpha live execution loop.
 
-Cycle (see ../README.md and ./README.md for the full design):
+Cycle (see README.md and live/README.md for the full design):
   1. Discover currently-open recurring crypto interval markets (all series,
      not a hardcoded list -- see discovery.py). By default only underlyings
      in config.TRUSTED_SETTLEMENT_UNDERLYINGS are discovered at all; set
@@ -47,11 +47,11 @@ not a replacement for how orders get placed.
 
 Defaults to DRY_RUN (see config.py, order_manager.py): every intended trade
 is logged, not placed. The probability model has now been checked for
-calibration against settled-market history (see ../research/backtest.py and
-../README.md's Backtest plan) but liquidity/fill economics still have not
+calibration against settled-market history (see backtest.py and
+README.md's Backtest plan) but liquidity/fill economics still have not
 been (Kalshi's REST API has no historical order book), so do not flip
 RESOLUTION_ALPHA_DRY_RUN=false until real order placement has been verified
-with a small test order (see ./README.md's Known gaps).
+with a small test order (see live/README.md's Known gaps).
 
 Optional RESOLUTION_ALPHA_LIGHTWEIGHT_MODE (see config.py): sleeps through
 most of each 15-minute interval instead of running continuously, waking only
@@ -312,7 +312,7 @@ def _new_stats() -> dict:
 def _log_stats_summary(stats: dict, window_seconds: float) -> None:
     """Periodic low-volume substitute for the DEBUG-level skip lines that
     logging.basicConfig(level=logging.INFO) normally drops entirely -- see
-    ../README.md's Known gaps ("log volume dropped after the safety-gate
+    README.md's Known gaps ("log volume dropped after the safety-gate
     rewrite") for why this exists: individual per-market DEBUG lines would be
     ~1667-markets-per-tick noisy, but *some* visibility into why markets in
     the entry window aren't trading (vs. genuinely zero activity) is worth a
@@ -1158,7 +1158,7 @@ async def run_forever() -> None:
                 # DRY_RUN_SIMULATED_BALANCE_DOLLARS on a failed live query, which
                 # meant Kelly sizing could size real orders against a fabricated
                 # bankroll instead of halting -- same bug caught and fixed in
-                # ../../btc_implied_prob/strategy.py's _bankroll_dollars).
+                # ../btc_implied_prob/strategy.py's _bankroll_dollars).
                 if not order_manager.dry_run:
                     try:
                         cycle_state["bankroll_dollars"] = await asyncio.to_thread(order_manager.get_balance_dollars)

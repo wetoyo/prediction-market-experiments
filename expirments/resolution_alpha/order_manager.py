@@ -1,7 +1,7 @@
 """Places (or, by default, simulates) orders on the favored side of a
 market. Defaults to dry-run: real order placement requires both
 RESOLUTION_ALPHA_DRY_RUN=false *and* valid Kalshi trading credentials
-(KALSHI_API_KEY_ID / KALSHI_PRIVATE_KEY_PATH) -- see ./README.md.
+(KALSHI_API_KEY_ID / KALSHI_PRIVATE_KEY_PATH) -- see live/README.md.
 
 Endpoint verified against Kalshi's current V2 API docs on 2026-08-05
 (docs.kalshi.com/api-reference/orders/*): KalshiTradingClient.place_order's

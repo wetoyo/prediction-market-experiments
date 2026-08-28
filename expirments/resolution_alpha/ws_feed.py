@@ -23,10 +23,10 @@ Two channels:
   websockets/websocket-connection), not a fixed list at connect time.
 
   cfbenchmarks_value -- real-time ticks of the actual CF Benchmarks index
-  Kalshi settles on (see ../README.md's "Index/oracle mechanics"), not a
+  Kalshi settles on (see README.md's "Index/oracle mechanics"), not a
   proxy. Only wired up for index ids confirmed against Kalshi's own contract
   rules text: BRTI (BTC) and ETHUSD_RTI (ETH). This is the fix for the
-  "biggest open risk" flagged in ./README.md -- Coinbase-spot-as-proxy basis
+  "biggest open risk" flagged in live/README.md -- Coinbase-spot-as-proxy basis
   risk -- for the two assets it covers; every other underlying still relies
   on spot_feed.py's Coinbase proxy. Discovering additional index ids (SOL,
   XRP, DOGE, ...) needs the `indexlist` action against a live, authenticated
@@ -53,7 +53,7 @@ import websockets
 
 logger = logging.getLogger("resolution_alpha.ws_feed")
 
-# Confirmed via live markets' rules_primary text (see ../README.md); never guessed.
+# Confirmed via live markets' rules_primary text (see README.md); never guessed.
 INDEX_ID_BY_UNDERLYING = {
     "BTC": "BRTI",
     "ETH": "ETHUSD_RTI",

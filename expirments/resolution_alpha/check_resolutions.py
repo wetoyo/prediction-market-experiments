@@ -11,14 +11,11 @@ never touches order placement or the runner's own state.
 import logging
 import sys
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "live"))
-
-import config  # noqa: E402
-import sampling  # noqa: E402
-from fees import estimate_fee_dollars  # noqa: E402
-from kalshi_gateway import fetch_market  # noqa: E402
+import config
+import sampling
+from fees import estimate_fee_dollars
+from kalshi_gateway import fetch_market
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s", stream=sys.stdout)
 logger = logging.getLogger("resolution_alpha.check_resolutions")

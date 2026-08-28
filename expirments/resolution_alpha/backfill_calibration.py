@@ -19,7 +19,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "live"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import calibration_db  # noqa: E402
 from backtest import fetch_candles, find_settled_crypto_markets  # noqa: E402

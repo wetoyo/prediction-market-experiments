@@ -5,8 +5,14 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# runner.py and its modules live one level up now (this folder is
+# launcher-scripts-only, matching ../../btc_implied_prob/live). Put the
+# experiment root on PYTHONPATH so pnl_killswitch.sh's inline equity probe
+# can `import kalshi_gateway` from here.
+export PYTHONPATH="$(cd .. && pwd)"
+
 # Repo-root virtualenv (created once: `python3 -m venv .venv` at the repo
-# root, then `.venv/bin/pip install -r expirments/resolution_alpha/live/requirements.txt`).
+# root, then `.venv/bin/pip install -r expirments/resolution_alpha/requirements.txt`).
 # Three levels up from live/. Falls back to PATH python if it's not there.
 PYTHON="../../../.venv/bin/python"
 if [ ! -x "$PYTHON" ]; then
@@ -28,7 +34,7 @@ source .env
 set +a
 
 LOG_FILE="logs/live_$(date +%Y%m%d_%H%M%S).log"
-nohup "$PYTHON" runner.py > "$LOG_FILE" 2>&1 &
+nohup "$PYTHON" ../runner.py > "$LOG_FILE" 2>&1 &
 RUNNER_PID=$!
 echo "$RUNNER_PID" > "$RUNNER_PID_FILE"
 disown

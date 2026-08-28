@@ -16,6 +16,14 @@
 
 Set-Location -Path $PSScriptRoot
 
+# runner.py and its modules live one level up now (this folder is
+# launcher-scripts-only, matching ../../btc_implied_prob/live and
+# ../../golf_field_alpha/live). Run "..\runner.py" and put the experiment
+# root on PYTHONPATH so the inline equity snippet below (and any child)
+# can `import kalshi_gateway` regardless of cwd.
+$ExperimentRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$env:PYTHONPATH = $ExperimentRoot
+
 $RunnerPidFile = ".runner.pid"
 $KillswitchPidFile = ".killswitch.pid"
 
@@ -62,13 +70,13 @@ $logFile = "logs\live_$timestamp.log"
 $pythonExe = Join-Path $PSScriptRoot "..\..\..\.venv\Scripts\python.exe"
 if (-not (Test-Path $pythonExe)) {
     Write-Host "venv python not found at $pythonExe"
-    Write-Host "Create it from the repo root:  python -m venv .venv  then  .venv\Scripts\python -m pip install -r expirments\resolution_alpha\live\requirements.txt"
+    Write-Host "Create it from the repo root:  python -m venv .venv  then  .venv\Scripts\python -m pip install -r expirments\resolution_alpha\requirements.txt"
     Read-Host "Press Enter to close this window"
     exit 1
 }
 $pythonExe = (Resolve-Path $pythonExe).Path
 
-$runnerProc = Start-Process -FilePath $pythonExe -ArgumentList "runner.py" `
+$runnerProc = Start-Process -FilePath $pythonExe -ArgumentList "..\runner.py" `
     -WindowStyle Hidden -RedirectStandardOutput $logFile -RedirectStandardError "$logFile.stderr" -PassThru
 Set-Content -Path $RunnerPidFile -Value $runnerProc.Id -NoNewline
 

@@ -10,7 +10,7 @@ Confirmed against the live API on 2026-08-04: series like KXBTC15M/KXETH15M
 report frequency="fifteen_min", KXBTCD/KXETHD/KXXRPD/KXDOGED etc report
 frequency="hourly". Each market's `floor_strike`/`cap_strike` + `strike_type`
 gives the resolution strike; `close_time` is when the 60-second settlement
-average (see ./README.md) ends.
+average (see live/README.md) ends.
 
 "Range"-type markets (strike_type == "between", e.g. KXBTC "Bitcoin range")
 are out of scope for v1 -- _extract_strike returns None for them and they're

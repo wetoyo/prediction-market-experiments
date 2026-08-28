@@ -39,6 +39,11 @@ HEARTBEAT_EVERY_N_CHECKS="${HEARTBEAT_EVERY_N_CHECKS:-10}"
 REQUIRED_CONSECUTIVE_BREACHES="${REQUIRED_CONSECUTIVE_BREACHES:-2}"
 # Inherited from start_live.sh (repo-root .venv); falls back to PATH python.
 PYTHON="${PYTHON:-python}"
+# The equity probe below does `import kalshi_gateway`, which now lives one
+# level up (this folder is launcher-scripts-only). start_live.sh exports this;
+# set it for standalone runs too. Assumes cwd is live/ (as when start_live
+# arms it) -- run this script from that directory.
+export PYTHONPATH="${PYTHONPATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 echo "kill-switch armed (v2, equity-based): runner_pid=${RUNNER_PID} baseline=\$${BASELINE_DOLLARS} threshold=${THRESHOLD_PCT}% consecutive_breaches_required=${REQUIRED_CONSECUTIVE_BREACHES}"
 

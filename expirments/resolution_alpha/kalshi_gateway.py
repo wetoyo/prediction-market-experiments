@@ -2,12 +2,13 @@
 submodule (Clients/Kalshi). That package uses bare same-directory imports
 (e.g. `from live_datastream import ...` inside live_execution.py), so we add
 its directory to sys.path rather than importing it as a proper package.
+Mirrors ../btc_implied_prob/kalshi_gateway.py and ../golf_field_alpha/kalshi_gateway.py.
 """
 
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 _KALSHI_CLIENT_DIR = _REPO_ROOT / "prediction_market_scraper" / "Clients" / "Kalshi"
 
 if str(_KALSHI_CLIENT_DIR) not in sys.path:

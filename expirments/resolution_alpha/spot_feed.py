@@ -1,6 +1,6 @@
 """Public, no-auth spot price feed used as a proxy for Kalshi's actual
 settlement source (CF Benchmarks' Real Time Index, not freely available --
-see the "Spot proxy" note in ./README.md for the basis risk this introduces).
+see the "Spot proxy" note in live/README.md for the basis risk this introduces).
 
 Keeps a short rolling (timestamp, price) history per underlying symbol so
 the probability model can estimate realized volatility and reconstruct the

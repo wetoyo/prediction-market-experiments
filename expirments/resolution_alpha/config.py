@@ -359,10 +359,15 @@ SPOT_HISTORY_SECONDS = 120.0
 # Kalshi's settlement TWAP window: these markets resolve on the average of the
 # last SETTLEMENT_AVERAGE_SECONDS of CF Benchmarks' Real Time Index before
 # close_time (confirmed from a live market's `rules_primary` text on
-# 2026-08-04 -- see ../README.md and ./README.md).
+# 2026-08-04 -- see README.md and live/README.md).
 SETTLEMENT_AVERAGE_SECONDS = 60.0
 
-LOG_DIR = os.environ.get("RESOLUTION_ALPHA_LOG_DIR", os.path.join(os.path.dirname(__file__), "logs"))
+# Logs and the sampling DB live under live/ (the launcher scripts run from
+# there and redirect stdout into live/logs/); config.py sits one level up
+# now, so join through "live" explicitly rather than dirname(__file__)/logs.
+LOG_DIR = os.environ.get(
+    "RESOLUTION_ALPHA_LOG_DIR", os.path.join(os.path.dirname(__file__), "live", "logs")
+)
 
 # Data-collection sampling (added 2026-08-07 per explicit user request): when
 # enabled, every market that enters the coarse entry window gets a row
@@ -381,7 +386,7 @@ SAMPLING_DB_PATH = os.environ.get("RESOLUTION_ALPHA_SAMPLING_DB_PATH", os.path.j
 # Kalshi underlying symbol (from series `tags`) -> Coinbase spot product id.
 # This is a free public proxy for Kalshi's actual settlement source (CF
 # Benchmarks' Real Time Index, not freely available) -- see the "Spot proxy"
-# note in ./README.md for the basis risk this introduces. Symbols with no
+# note in live/README.md for the basis risk this introduces. Symbols with no
 # Coinbase listing will simply fail to poll and get skipped (see spot_feed.py).
 KALSHI_UNDERLYING_TO_COINBASE_PRODUCT = {
     "BTC": "BTC-USD",

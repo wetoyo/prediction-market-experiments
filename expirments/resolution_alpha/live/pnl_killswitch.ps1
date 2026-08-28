@@ -38,6 +38,13 @@ param(
 
 Set-Location -Path $PSScriptRoot
 
+# The equity-probe snippet below does `import kalshi_gateway`, which now
+# lives one level up (this folder is launcher-scripts-only). start_live.ps1
+# exports PYTHONPATH before arming this; set it here too for standalone runs.
+if (-not $env:PYTHONPATH) {
+    $env:PYTHONPATH = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+}
+
 Write-Host "kill-switch armed (PowerShell, equity-based): runner_pid=$RunnerPid baseline=`$$BaselineDollars threshold=$ThresholdPct% consecutive_breaches_required=$RequiredConsecutiveBreaches"
 
 $i = 0
