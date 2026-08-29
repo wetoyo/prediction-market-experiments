@@ -150,12 +150,41 @@ MIN_EDGE_DOLLARS = _float_env("RESOLUTION_ALPHA_MIN_EDGE", 0.02)
 # relative to the z-score *at entry*, attempt a one-shot best-effort exit sell
 # ("just incase the sell somehow gets filled" -- acknowledged as unlikely to
 # fill in a thin, fast-moving, near-expiry book, but worth trying).
-# 3.0 sigma is a standard "this is a genuinely rare, surprising move" bar
-# (under a normal model, ~0.13% one-tailed probability) -- large enough that
-# ordinary noise won't trigger spurious exit attempts on a position that's
-# still fine, but not so large that a real reversal goes unaddressed. See
-# runner.py's _z_for_side / _check_exit_conditions for the exact comparison.
-EXIT_Z_SCORE_DROP_THRESHOLD = _float_env("RESOLUTION_ALPHA_EXIT_Z_SCORE_DROP_THRESHOLD", 3.0)
+#
+# Raised 3.0 -> 4.0 on 2026-08-29 after a post-mortem on two live exits that
+# day (KXBTC15M-26AUG291400-00, KXBTC15M-26AUG291415-15). The first was a
+# genuine regime break -- BTC spiked ~90 pts straight through the strike in
+# ~15s, reconstructed z-drop ~10-15 sigma -- and exiting was correct (~$34
+# better than holding to a YES resolution that zeroed the NO). The second was
+# a false alarm: a ~15-20 pt wiggle that touched the strike and mean-reverted,
+# reconstructed z-drop only ~2-4 sigma, and the market never repriced (NO ask
+# was still 0.11 when the model panic-sold the YES at ~0.89). It resolved YES;
+# the exit turned a ~$6 win into a ~$7 loss. Root cause: sigma_used collapses
+# ~tau^1.5 in the last 60s (see probability.py's settlement-window branch), so
+# a fixed sigma bar is a shrinking *dollar* bar -- late-expiry noise
+# manufactures large z-drops. 4.0 sigma still clears any real move (the first
+# incident triggers at 4, 5, even 8) while dropping marginal ones. The harder
+# guard is EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC below, an AND condition.
+# See runner.py's _z_for_side / _check_exit_conditions for the exact comparison.
+EXIT_Z_SCORE_DROP_THRESHOLD = _float_env("RESOLUTION_ALPHA_EXIT_Z_SCORE_DROP_THRESHOLD", 4.0)
+
+# Added 2026-08-29 (same post-mortem as the 3.0 -> 4.0 bump above). A second,
+# independent gate the z-drop must clear before an exit actually fires: the
+# underlying must have moved, in absolute terms, at least this fraction away
+# from where it was when the position was opened. This is the "a 15-pt wiggle
+# can't trigger regardless of how small sigma got" backstop -- the z-drop
+# threshold alone can't distinguish "spot blew through the strike" from
+# "spot drifted 0.02% while tau^1.5 shrank sigma_used", and only the former
+# is a real emergency. 0.0005 (5 bp, ~$39 on BTC at $78k) sits above ordinary
+# final-minute noise (~1-3 bp) but well under a real move: incident 1 moved
+# ~9 bp (fires), incident 2 moved ~2 bp (held). Costs zero latency -- both
+# spot and entry_spot are already in hand on the same tick the z-drop is
+# computed, so this does NOT slow down a real exit (in incident 1 the move
+# had already cleared this floor by the time z dropped). A z-drop that
+# clears EXIT_Z_SCORE_DROP_THRESHOLD but not this floor is logged once and
+# the position stays eligible -- if the move then develops, the exit still
+# fires on a later tick. Set to 0.0 to disable and go back to z-drop only.
+EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC = _float_env("RESOLUTION_ALPHA_EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC", 0.0005)
 
 # Hard ceiling on position size per market, in contracts. This is not
 # usually the size actually traded -- runner.py's _kelly_contracts sizes

@@ -24,10 +24,13 @@ Cycle (see README.md and live/README.md for the full design):
      final seconds before close, so there's rarely time for anything to
      develop. As a defensive backstop (added 2026-08-06, see
      config.EXIT_Z_SCORE_DROP_THRESHOLD), each open position is re-checked
-     every tick against a fresh probability estimate; a sudden, large
-     adverse move (in the model's own sigma units, relative to the z-score
-     at entry) triggers a single best-effort exit sell attempt -- see
-     _check_exit_conditions.
+     every tick against a fresh probability estimate; a single best-effort
+     exit sell attempt fires only when BOTH a sudden adverse move in the
+     model's own sigma units (relative to the z-score at entry) AND a
+     minimum absolute move in the underlying itself (added 2026-08-29, see
+     config.EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC) are seen -- the second gate
+     stops near-expiry noise, amplified by sigma_used collapsing as tau->0,
+     from tripping the first. See _check_exit_conditions.
 
 Data sourcing, in priority order (each falls back to the next if unavailable
 -- e.g. no KALSHI_API_KEY_ID/KALSHI_PRIVATE_KEY_PATH configured, which is the
@@ -784,11 +787,38 @@ async def _check_exit_conditions(
         if z_drop < config.EXIT_Z_SCORE_DROP_THRESHOLD:
             continue
 
-        logger.warning(
+        # Second, independent gate (see config.EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC):
+        # the z-drop alone can't tell a real regime break from ordinary noise
+        # amplified by sigma_used collapsing ~tau^1.5 near expiry. Require the
+        # underlying to have actually moved, in absolute terms, away from the
+        # entry spot. Zero added latency -- entry_spot and spot are both in
+        # hand right here. If the z-drop clears but this doesn't, log once and
+        # keep the position eligible: a move that's really developing will
+        # clear the floor on a later tick and the exit fires then.
+        entry_spot = position.get("entry_spot")
+        adverse_move_frac = abs(spot - entry_spot) / entry_spot if entry_spot else float("inf")
+        if adverse_move_frac < config.EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC:
+            if not position.get("exit_deferred_logged"):
+                _log_despite_lightweight_mode(
+                    logging.WARNING,
+                    "%s EXIT z-drop %.2f >= %.2f but underlying only moved %.3f%% from entry "
+                    "(floor %.3f%%) -- model-only signal, market has not confirmed; holding, "
+                    "still monitoring (%.0fs left)",
+                    ticker, z_drop, config.EXIT_Z_SCORE_DROP_THRESHOLD,
+                    adverse_move_frac * 100.0, config.EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC * 100.0,
+                    seconds_left,
+                )
+                position["exit_deferred_logged"] = True
+            continue
+
+        _log_despite_lightweight_mode(
+            logging.WARNING,
             "%s EXIT TRIGGER: held %s x%.2f, entry_z=%.2f current_z=%.2f (dropped %.2f sigma, "
-            "threshold=%.2f) -- attempting one-shot best-effort sell, %.0fs left",
+            "threshold=%.2f), underlying moved %.3f%% from entry, settlement_est=%.2f vs strike=%.2f, "
+            "sigma_used=%.4f -- attempting one-shot best-effort sell, %.0fs left",
             ticker, position["side"], position["contracts"], position["entry_z"], current_z,
-            z_drop, config.EXIT_Z_SCORE_DROP_THRESHOLD, seconds_left,
+            z_drop, config.EXIT_Z_SCORE_DROP_THRESHOLD, adverse_move_frac * 100.0,
+            estimate.settlement_estimate, market.strike, estimate.sigma_used, seconds_left,
         )
         position["exit_attempted"] = True  # set before attempting: see docstring, never retry
 
@@ -1267,17 +1297,19 @@ async def evaluate_and_maybe_trade(
 
     # Register/update the open position for exit-monitoring (see
     # _check_exit_conditions). Stacking (buying the same market more than
-    # once) accumulates contracts here but keeps the *original* entry_z --
-    # later tranches were themselves gated by the same probability checks, so
-    # the first entry's z is still a reasonable "what did we believe when we
-    # started building this position" reference point, and recomputing a
-    # blended one buys precision this backstop doesn't need.
+    # once) accumulates contracts here but keeps the *original* entry_z and
+    # entry_spot -- later tranches were themselves gated by the same
+    # probability checks, so the first entry's values are still a reasonable
+    # "what did we believe / where was spot when we started building this
+    # position" reference point, and recomputing blended ones buys precision
+    # this backstop doesn't need.
     entry_z = _z_for_side(estimate.z, market.direction, estimate.favored_side)
     existing = open_positions.get(market.ticker)
     if existing is None:
         open_positions[market.ticker] = {
             "market": market, "side": estimate.favored_side,
-            "contracts": filled_size, "entry_z": entry_z, "exit_attempted": False,
+            "contracts": filled_size, "entry_z": entry_z, "entry_spot": spot,
+            "exit_attempted": False,
         }
     else:
         existing["contracts"] += filled_size
