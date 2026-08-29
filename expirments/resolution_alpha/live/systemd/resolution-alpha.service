@@ -1,0 +1,22 @@
+[Unit]
+Description=Resolution Alpha live Kalshi runner
+After=network-online.target time-sync.target tailscaled.service
+Wants=network-online.target
+Wants=resolution-alpha-killswitch.service
+Before=resolution-alpha-killswitch.service
+
+[Service]
+Type=simple
+User=wetoyo
+WorkingDirectory=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha
+EnvironmentFile=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha/live/.env
+Environment=PYTHONPATH=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha
+ExecStart=/home/wetoyo/prediction-market-experiments/.venv/bin/python -u runner.py
+Restart=on-failure
+RestartSec=10
+# SIGTERM to runner.py is a deliberate stop (systemctl stop, or the kill-switch
+# firing) -- do not auto-restart out of one.
+RestartPreventExitStatus=SIGTERM SIGKILL
+
+[Install]
+WantedBy=multi-user.target

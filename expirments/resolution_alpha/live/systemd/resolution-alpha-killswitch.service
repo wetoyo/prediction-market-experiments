@@ -1,0 +1,27 @@
+[Unit]
+Description=Resolution Alpha P&L kill-switch (equity vs baseline, auto-kills the runner)
+After=resolution-alpha.service
+BindsTo=resolution-alpha.service
+PartOf=resolution-alpha.service
+
+[Service]
+Type=simple
+User=wetoyo
+WorkingDirectory=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha/live
+EnvironmentFile=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha/live/.env
+Environment=PYTHONPATH=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha
+Environment=PYTHON=/home/wetoyo/prediction-market-experiments/.venv/bin/python
+Environment=THRESHOLD_PCT=-10
+Environment=CHECK_INTERVAL_SECONDS=60
+# Wait for the runner to have a MainPID before arm_killswitch.sh reads it.
+ExecStartPre=/bin/sleep 5
+# arm_killswitch.sh resolves the runner PID from systemd and computes a fresh
+# equity baseline (never a hardcoded dollar amount -- see that script). It also
+# runs pnl_killswitch.sh, which self-exits if RESOLUTION_ALPHA_DISABLE_KILLSWITCH
+# is set in .env, so this whole service is a clean no-op in that case.
+ExecStart=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha/live/arm_killswitch.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

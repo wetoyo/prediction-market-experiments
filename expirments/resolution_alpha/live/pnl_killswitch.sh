@@ -31,6 +31,21 @@
 
 set -u
 
+# RESOLUTION_ALPHA_DISABLE_KILLSWITCH (from .env): honoured here directly, not
+# just in the start_live.* launchers -- the systemd unit
+# (resolution-alpha-killswitch.service) execs this script without going
+# through a launcher, so a check only in start_live.sh would silently leave
+# the switch armed under systemd. Truthy (1/true/yes/on) -> exit 0 without
+# arming, before the RUNNER_PID:? check below so an unset RUNNER_PID can't
+# mask it.
+_ks_disabled=$(printf '%s' "${RESOLUTION_ALPHA_DISABLE_KILLSWITCH:-}" | tr '[:upper:]' '[:lower:]')
+case "$_ks_disabled" in
+    1 | true | yes | on)
+        echo "pnl_killswitch: RESOLUTION_ALPHA_DISABLE_KILLSWITCH is set -- not arming, exiting cleanly."
+        exit 0
+        ;;
+esac
+
 RUNNER_PID="${RUNNER_PID:?must set RUNNER_PID}"
 BASELINE_DOLLARS="${BASELINE_DOLLARS:-100.0}"
 THRESHOLD_PCT="${THRESHOLD_PCT:--10.0}"
