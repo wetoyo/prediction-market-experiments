@@ -76,7 +76,7 @@ from datetime import datetime, timezone
 import config
 import sampling
 from discovery import ActiveMarket, find_active_markets
-from fees import estimate_fee_dollars
+from fees import DEFAULT_FEE_RATE, estimate_fee_dollars
 from order_manager import OrderManager
 from orderbook import walk_book
 from probability import estimate_probability, realized_vol_per_sqrt_second
@@ -147,6 +147,28 @@ def _cycle_key(now: datetime) -> int:
     return (now.hour * 60 + now.minute) // 15
 
 
+def _warn_unfunded_shards(active_markets: list, shard_balances: dict | None) -> None:
+    """Once per cycle: if any discovered market trades on an exchange shard
+    the account holds $0 on, say so loudly. Without collateral on that shard
+    every entry there is a silent `404 user_not_found` -- this is the line
+    that turns "the bot hasn't traded in days" into an obvious cause. No-op
+    if the balance fetch failed (None) or nothing is unfunded.
+    """
+    if not shard_balances:
+        return
+    needed = {m.exchange_index for m in active_markets if m.exchange_index is not None}
+    unfunded = sorted(s for s in needed if shard_balances.get(s, 0.0) <= 0.0)
+    if not unfunded:
+        return
+    stuck = sum(1 for m in active_markets if m.exchange_index in unfunded)
+    logger.warning(
+        "exchange shard(s) %s hold $0 collateral but %d/%d discovered markets trade there -- those cannot be "
+        "entered until funds are moved (kalshi.com/account/exchange-indexes or the Intra Account Transfer API). "
+        "shard balances: %s",
+        unfunded, stuck, len(active_markets), shard_balances,
+    )
+
+
 def _kelly_contracts(favored_probability: float, price: float, bankroll_dollars: float, kelly_fraction: float) -> float:
     """Kelly position size, in contracts (not yet floored to an integer or
     clipped to config's hard ceilings -- callers do that).
@@ -166,20 +188,43 @@ def _kelly_contracts(favored_probability: float, price: float, bankroll_dollars:
     return stake_dollars / price
 
 
+def _kelly_probability(effective_probability: float, market_price: float) -> float:
+    """Win-probability fed to the Kelly size cap in _size_for_edge. Normally
+    effective_probability (model, market-clamped); with
+    config.KELLY_USE_MARKET_PROB set, the market's own top-of-book price plus
+    MAX_TRUSTED_EDGE_PROB instead, with the raw model prob dropped -- see that
+    config flag's docstring.
+    """
+    if config.KELLY_USE_MARKET_PROB:
+        return min(1.0, market_price + config.MAX_TRUSTED_EDGE_PROB)
+    return effective_probability
+
+
 def _size_for_edge(
     orderbook_fp: dict,
     side: str,
-    favored_probability: float,
+    edge_probability: float,
+    kelly_probability: float,
     bankroll_dollars: float,
     kelly_fraction: float,
     max_contracts: float,
 ) -> float:
     """Walks the book from best price outward, extending the position by
     whole contracts only while the CUMULATIVE fill so far still (a) clears
-    MIN_EDGE_DOLLARS net of fees, and (b) stays within the Kelly-implied size
-    at that cumulative average price -- Kelly's ideal size shrinks as price
-    worsens, since edge shrinks too, so a size that was Kelly-justified at
-    the top-of-book price may not be once the book has thinned into it.
+    MIN_EDGE_DOLLARS net of fees, (b) stays within the Kelly-implied size at
+    that cumulative average price, and (c) fits the account's cash plus fee.
+    Kelly's ideal size shrinks as price worsens, since edge shrinks too, so a
+    size that was Kelly-justified at the top-of-book price may not be once the
+    book has thinned into it.
+
+    `edge_probability` is the win-probability used for the MIN_EDGE_DOLLARS
+    check (always effective_probability); `kelly_probability` is the one fed to
+    _kelly_contracts for the size cap -- the same value unless
+    config.KELLY_USE_MARKET_PROB is set, in which case the caller passes the
+    market's own top-of-book-derived probability instead. Check (c) is the
+    same fee-aware cash cap _size_for_max_available applies: Kalshi rejects the
+    whole order (400) if balance < cost + fee, and a full-Kelly size at a high
+    price can exceed the balance on its own.
     Stops at the first contract that fails either check, taking a *partial*
     level if that's where the cutoff falls (binary search within the level,
     not all-or-nothing per level -- a single deep level can easily hold far
@@ -221,15 +266,22 @@ def _size_for_edge(
     if probe.avg_price is None:
         return 0.0
 
+    spendable = max(0.0, bankroll_dollars - 0.01)  # 1c cushion, see _size_for_max_available
+
     def feasible(cum_size: float, cum_cost: float, price: float, extra: float) -> bool:
         if extra <= 0:
             return True
         trial_size = cum_size + extra
         trial_avg_price = (cum_cost + price * extra) / trial_size
         trial_fee = estimate_fee_dollars(trial_avg_price, trial_size)
-        trial_edge_per_contract = ((favored_probability - trial_avg_price) * trial_size - trial_fee) / trial_size
-        kelly_cap_at_price = _kelly_contracts(favored_probability, trial_avg_price, bankroll_dollars, kelly_fraction)
-        return trial_edge_per_contract >= config.MIN_EDGE_DOLLARS and trial_size <= kelly_cap_at_price
+        trial_edge_per_contract = ((edge_probability - trial_avg_price) * trial_size - trial_fee) / trial_size
+        kelly_cap_at_price = _kelly_contracts(kelly_probability, trial_avg_price, bankroll_dollars, kelly_fraction)
+        affordable = trial_size * trial_avg_price + trial_fee <= spendable
+        return (
+            trial_edge_per_contract >= config.MIN_EDGE_DOLLARS
+            and trial_size <= kelly_cap_at_price
+            and affordable
+        )
 
     cum_size = 0.0
     cum_cost = 0.0
@@ -278,21 +330,95 @@ def _size_for_max_available(
     if probe.avg_price is None:
         return 0.0
 
+    # Kalshi checks balance >= contract cost + trading fee at order time and
+    # 400s the WHOLE order otherwise -- seen live 2026-08-28: 221 YES @ 0.902
+    # = $199.34 cost + ~$1.37 fee vs a $200.17 balance, rejected outright (not
+    # partially filled). `int(budget // price)` spends 100% of cash on
+    # contracts and reserves nothing for the fee. Reserve it: per-contract fee
+    # ~= DEFAULT_FEE_RATE * price * (1 - price) (the pre-ceil form of
+    # fees.estimate_fee_dollars), plus a 1c cushion for its round-up and any
+    # exchange minimum-balance.
+    spendable = max(0.0, bankroll_dollars - 0.01)
+
     cum_size = 0.0
-    cum_cost = 0.0
+    cum_all_in = 0.0  # running (contract cost + reserved fee)
     for price, level_size in probe.levels_used:
         if price <= 0:
             break
+        per_contract_all_in = price + DEFAULT_FEE_RATE * price * (1.0 - price)
         level_size_int = int(level_size)
-        affordable = int((bankroll_dollars - cum_cost) // price)
+        affordable = int((spendable - cum_all_in) // per_contract_all_in)
         take = min(level_size_int, affordable)
         if take <= 0:
             break
         cum_size += take
-        cum_cost += take * price
+        cum_all_in += take * per_contract_all_in
         if take < level_size_int:
-            break  # cash exhausted mid-level; deeper levels only cost more
+            break  # cash (incl. fee reserve) exhausted mid-level; deeper levels only cost more
     return cum_size
+
+
+def _reconcile_fill(
+    order_response: dict, simulated, favored_side: str, dry_run: bool
+) -> tuple[float, float, float]:
+    """What actually filled, as (contracts, avg_price, fee_dollars) -- for
+    position/bankroll/budget accounting after buy_favored_side returns.
+    `avg_price` is in FAVORED-SIDE terms (the same convention orderbook.walk_book
+    and the rest of evaluate_and_maybe_trade use), NOT Kalshi's YES-denominated
+    `average_fill_price`.
+
+    Before this existed, the loop recorded `walk_book`'s *simulated* fill size
+    as the position regardless of what Kalshi actually matched. With
+    immediate_or_cancel orders (and, before, GTC orders raced near close) a
+    partial or zero fill is routine, so trusting the simulation meant phantom
+    positions, a bankroll drifting from reality, and a cycle budget consumed
+    by contracts never bought.
+
+    dry-run: no real match happened, so the simulated walk stands in.
+    live: take the actually-filled *quantity* from `fill_count` (the field that
+    varies with a partial fill). Take the price from `average_fill_price`, but
+    convert it to favored-side terms first -- it is always quoted in YES
+    dollars, so for a NO buy the favored-side price is `1 - average_fill_price`
+    -- and fall back to the simulated avg_price if the response omits it or the
+    converted value lands implausibly far from the simulation. That guard is
+    not paranoia: `cost = avg_price * filled_size`, and under MAX_SIZE_MODE the
+    next tick's size is computed off the resulting bankroll, so a mis-scaled
+    price (e.g. a NO fill booked at its ~0.03 YES price instead of its ~0.97
+    real cost) barely decrements bankroll and the loop immediately fires
+    another full-size order. Seen live 2026-08-28.
+    """
+    if dry_run:
+        fee = estimate_fee_dollars(simulated.avg_price, simulated.filled_size)
+        return simulated.filled_size, simulated.avg_price, fee
+
+    try:
+        filled = float(order_response.get("fill_count") or 0.0)
+    except (TypeError, ValueError):
+        filled = 0.0
+    if filled <= 0.0:
+        return 0.0, 0.0, 0.0
+
+    avg_price = simulated.avg_price
+    try:
+        yes_price = float(order_response["average_fill_price"])  # always YES-denominated
+        favored_price = yes_price if favored_side == "yes" else round(1.0 - yes_price, 4)
+        if 0.0 < favored_price < 1.0 and abs(favored_price - simulated.avg_price) <= 0.05:
+            avg_price = favored_price
+        else:
+            logger.warning(
+                "reconcile: response avg_fill_price %.4f (favored-side %.4f) implausible vs simulated %.4f "
+                "-- using simulated",
+                yes_price, favored_price, simulated.avg_price,
+            )
+    except (KeyError, TypeError, ValueError):
+        pass  # response omitted the price -- simulated.avg_price already assigned
+
+    try:
+        resp_fee = float(order_response.get("average_fee_paid") or 0.0) * filled  # avg is per-contract
+        fee = resp_fee if 0.0 <= resp_fee <= filled else estimate_fee_dollars(avg_price, filled)
+    except (TypeError, ValueError):
+        fee = estimate_fee_dollars(avg_price, filled)
+    return filled, avg_price, fee
 
 
 _STAT_KEYS = (
@@ -302,6 +428,7 @@ _STAT_KEYS = (
     "skip_blacklisted", "skip_budget_exhausted", "skip_orderbook_failed",
     "skip_no_liquidity", "skip_low_market_prob", "skip_dynamic_window", "skip_min_seconds_left",
     "skip_ceiling_lt1", "skip_no_edge_size", "skip_no_fillable_depth", "skip_low_edge", "skip_no_bankroll",
+    "skip_no_shard_collateral",
 )
 
 
@@ -324,7 +451,7 @@ def _log_stats_summary(stats: dict, window_seconds: float) -> None:
         "eval summary (last %.0fs): in_window=%d traded=%d | untrusted_underlying=%d no_spot=%d no_vol=%d low_model_prob=%d "
         "blacklisted=%d budget=%d orderbook_failed=%d no_liquidity=%d "
         "low_market_prob=%d dynamic_window=%d min_seconds_left=%d ceiling=%d no_edge_size=%d no_fillable_depth=%d low_edge=%d "
-        "no_bankroll=%d",
+        "no_bankroll=%d no_shard_collateral=%d",
         window_seconds, stats["in_window"], stats["traded"],
         stats["skip_untrusted_underlying"],
         stats["skip_no_spot"], stats["skip_no_vol"], stats["skip_low_model_prob"],
@@ -332,7 +459,7 @@ def _log_stats_summary(stats: dict, window_seconds: float) -> None:
         stats["skip_orderbook_failed"], stats["skip_no_liquidity"], stats["skip_low_market_prob"],
         stats["skip_dynamic_window"], stats["skip_min_seconds_left"], stats["skip_ceiling_lt1"], stats["skip_no_edge_size"],
         stats["skip_no_fillable_depth"], stats["skip_low_edge"],
-        stats["skip_no_bankroll"],
+        stats["skip_no_bankroll"], stats["skip_no_shard_collateral"],
     )
 
 
@@ -575,7 +702,9 @@ def _diagnostic_skip_reasons(
         return reasons
 
     raw_size = _size_for_edge(
-        orderbook_fp, estimate.favored_side, effective_probability, bankroll, config.KELLY_FRACTION, max_contracts,
+        orderbook_fp, estimate.favored_side, effective_probability,
+        _kelly_probability(effective_probability, top_of_book.avg_price),
+        bankroll, config.KELLY_FRACTION, max_contracts,
     )
     target_size = math.floor(raw_size)
     if target_size < 1:
@@ -679,13 +808,19 @@ async def _check_exit_conditions(
             continue
 
         try:
-            order_manager.buy_favored_side(
-                ticker=ticker, side=exit_side, contracts=fill.filled_size,
-                limit_price=fill.levels_used[-1][0],
+            # reduce_only: a best-effort exit must never fill past what we
+            # actually hold and flip into an opposite position. exchange_index:
+            # route to the market's own shard (same as entries). to_thread:
+            # don't block the event loop on the HTTP round-trip.
+            exit_response = await asyncio.to_thread(
+                order_manager.buy_favored_side,
+                ticker, exit_side, fill.filled_size, fill.levels_used[-1][0],
+                market.exchange_index, "immediate_or_cancel", True,
             )
+            exit_filled, _, _ = _reconcile_fill(exit_response, fill, exit_side, order_manager.dry_run)
             _log_despite_lightweight_mode(
-                logging.WARNING, "%s exit sell submitted: %.2f/%.2f contracts @ boundary %.4f",
-                ticker, fill.filled_size, position["contracts"], fill.levels_used[-1][0],
+                logging.WARNING, "%s exit sell: filled %.2f of %.2f held @ boundary %.4f",
+                ticker, exit_filled, position["contracts"], fill.levels_used[-1][0],
             )
         except Exception:
             logger.exception("%s exit attempt: order placement failed", ticker)
@@ -911,6 +1046,35 @@ async def evaluate_and_maybe_trade(
         _record_skip_sample("no_bankroll")
         return
 
+    # Exchange-shard collateral guard (Kalshi Exchange Sharding,
+    # docs.kalshi.com/getting_started/exchange_sharding). Collateral is local
+    # to a shard; an order routed to a shard the account holds no balance on
+    # is rejected `404 {"error":{"code":"user_not_found"}}`, and the except
+    # around buy_favored_side below would then blacklist the ticker for the
+    # whole cycle. Every crypto interval series migrated onto a nonzero shard
+    # in Aug 2026 -- if the account's collateral hasn't been moved there too
+    # (kalshi.com/account/exchange-indexes, or the Intra Account Transfer
+    # API), nothing here can trade. Skip cleanly with a dedicated stat rather
+    # than attempt-and-blacklist. shard_balances is fetched once per cycle
+    # (see run_forever); falsy (fetch failed, or an unexpected empty
+    # breakdown) -> don't guard, let the real order attempt be the judge
+    # rather than silently skipping every market.
+    shard_balances = cycle_state.get("shard_balances")
+    if (
+        not order_manager.dry_run
+        and market.exchange_index is not None
+        and shard_balances
+        and shard_balances.get(market.exchange_index, 0.0) <= 0.0
+    ):
+        logger.debug(
+            "%s trades on exchange shard %d, which holds $0 collateral -- skipping "
+            "(move funds: kalshi.com/account/exchange-indexes)",
+            market.ticker, market.exchange_index,
+        )
+        stats["skip_no_shard_collateral"] += 1
+        _record_skip_sample("no_shard_collateral")
+        return
+
     market_fills = cycle_state.setdefault("market_fills", {})
     already_filled_this_market = market_fills.get(market.ticker, 0.0)
     # MAX_SIZE_MODE's whole point is to discover how much the book/cash
@@ -947,6 +1111,7 @@ async def evaluate_and_maybe_trade(
     else:
         raw_size = _size_for_edge(
             orderbook_fp, estimate.favored_side, effective_probability,
+            _kelly_probability(effective_probability, top_of_book.avg_price),
             bankroll, config.KELLY_FRACTION, max_contracts,
         )
     target_size = math.floor(raw_size)
@@ -1025,17 +1190,48 @@ async def evaluate_and_maybe_trade(
     # record the fill in market_fills so this market can still be bought
     # again later (up to its remaining ceiling) rather than being blocked
     # outright, per the new per-market-fill-tracking design above.
+    #
+    # buy_favored_side runs in a worker thread (await asyncio.to_thread): in
+    # live mode it does a blocking `requests` POST, and calling it inline here
+    # would stall the ws_feed receive coroutine for the whole HTTP round-trip
+    # -- every market evaluated later in the same tick would then size off an
+    # order book that stopped applying deltas when this order fired.
     try:
-        order_manager.buy_favored_side(
-            ticker=market.ticker,
-            side=estimate.favored_side,
-            contracts=fill.filled_size,
-            limit_price=fill.levels_used[-1][0],
+        order_response = await asyncio.to_thread(
+            order_manager.buy_favored_side,
+            market.ticker,
+            estimate.favored_side,
+            fill.filled_size,
+            fill.levels_used[-1][0],
+            market.exchange_index,
         )
     except Exception:
         market_blacklist.add(market.ticker)
         _record_skip_sample("order_placement_failed")
         raise
+
+    # What actually matched, not what walk_book simulated -- the order is IOC,
+    # so a partial or zero fill (beaten to the book near close, or no depth at
+    # the boundary at submit time) is routine and must not be booked as a full
+    # position. See _reconcile_fill.
+    filled_size, filled_avg_price, fee = _reconcile_fill(
+        order_response, fill, estimate.favored_side, order_manager.dry_run
+    )
+    if filled_size <= 0.0:
+        logger.info(
+            "%s order placed but 0 filled (requested %.2f %s @ %.4f) -- no marketable depth at submit time; "
+            "not blacklisting, re-evaluates next tick",
+            market.ticker, fill.filled_size, estimate.favored_side, fill.levels_used[-1][0],
+        )
+        _finalize_sample(sample_id, traded=False, skip_reason="zero_fill")
+        return
+    if filled_size + 1e-9 < fill.filled_size:
+        logger.warning(
+            "%s partial fill: %.2f of %.2f requested %s @ ~%.4f (IOC remainder dropped)",
+            market.ticker, filled_size, fill.filled_size, estimate.favored_side, filled_avg_price,
+        )
+
+    edge_per_contract = ((effective_probability - filled_avg_price) * filled_size - fee) / filled_size
 
     # Diagnostic only, MAX_SIZE_MODE fills -- re-walks the same orderbook_fp
     # with an effectively unlimited probe, purely to report how much book
@@ -1051,22 +1247,23 @@ async def evaluate_and_maybe_trade(
     depth_note = ""
     if config.MAX_SIZE_MODE:
         true_depth = walk_book(orderbook_fp, estimate.favored_side, 1_000_000.0)
-        if true_depth.filled_size > fill.filled_size + 1e-9:
+        if true_depth.filled_size > filled_size + 1e-9:
             depth_note = " [book had %.2f available -- cash-bound, not liquidity-bound]" % true_depth.filled_size
         else:
             depth_note = " [book depth itself was the true bind]"
 
     _log_despite_lightweight_mode(
-        logging.INFO, "%s entry submitted: %s x%.2f @ boundary %.4f (edge/contract=%.4f)%s",
-        market.ticker, estimate.favored_side, fill.filled_size, fill.levels_used[-1][0], edge_per_contract, depth_note,
+        logging.INFO, "%s entry filled: %s x%.2f of %.2f req @ ~%.4f (boundary %.4f, edge/contract=%.4f)%s",
+        market.ticker, estimate.favored_side, filled_size, fill.filled_size, filled_avg_price,
+        fill.levels_used[-1][0], edge_per_contract, depth_note,
     )
 
     stats["traded"] += 1
     _finalize_sample(sample_id, traded=True, skip_reason=None)
-    market_fills[market.ticker] = already_filled_this_market + fill.filled_size
-    cost = fill.avg_price * fill.filled_size + fee
+    market_fills[market.ticker] = already_filled_this_market + filled_size
+    cost = filled_avg_price * filled_size + fee
     cycle_state["bankroll_dollars"] = bankroll - cost
-    cycle_state["contracts_committed"] = already_committed + fill.filled_size
+    cycle_state["contracts_committed"] = already_committed + filled_size
 
     # Register/update the open position for exit-monitoring (see
     # _check_exit_conditions). Stacking (buying the same market more than
@@ -1080,10 +1277,10 @@ async def evaluate_and_maybe_trade(
     if existing is None:
         open_positions[market.ticker] = {
             "market": market, "side": estimate.favored_side,
-            "contracts": fill.filled_size, "entry_z": entry_z, "exit_attempted": False,
+            "contracts": filled_size, "entry_z": entry_z, "exit_attempted": False,
         }
     else:
-        existing["contracts"] += fill.filled_size
+        existing["contracts"] += filled_size
 
 
 async def run_forever() -> None:
@@ -1098,6 +1295,18 @@ async def run_forever() -> None:
     if config.SAMPLING_ENABLED:
         sampling.init_db(config.SAMPLING_DB_PATH)
         logger.info("sampling enabled, writing to %s", config.SAMPLING_DB_PATH)
+
+    # Per-shard collateral at startup (Kalshi Exchange Sharding). Order
+    # collateral is local to a shard; the crypto interval series this strategy
+    # trades sit on nonzero shards, so a shard breakdown that's $0 everywhere
+    # but shard 0 means no live entry can succeed until funds are moved
+    # (kalshi.com/account/exchange-indexes). Logged loudly here so it's the
+    # first thing visible in the log rather than a silent stream of 404s.
+    if not order_manager.dry_run:
+        try:
+            logger.info("per-shard collateral at startup: %s", order_manager.get_shard_balances())
+        except Exception:
+            logger.exception("could not fetch per-shard balances at startup")
 
     ws_task = asyncio.create_task(ws_feed.run())
 
@@ -1165,6 +1374,15 @@ async def run_forever() -> None:
                     except Exception:
                         logger.exception("failed to fetch account balance -- skipping sizing/trading this cycle")
                         cycle_state["bankroll_dollars"] = None
+                    # Per-shard balances for this cycle's exchange-shard collateral
+                    # guard (see evaluate_and_maybe_trade). None -> guard falls
+                    # through and lets the real order attempt be the judge.
+                    try:
+                        cycle_state["shard_balances"] = await asyncio.to_thread(order_manager.get_shard_balances)
+                    except Exception:
+                        logger.exception("failed to fetch per-shard balances this cycle")
+                        cycle_state["shard_balances"] = None
+                    _warn_unfunded_shards(active_markets, cycle_state.get("shard_balances"))
                 else:
                     cycle_state["bankroll_dollars"] = config.DRY_RUN_SIMULATED_BALANCE_DOLLARS
 

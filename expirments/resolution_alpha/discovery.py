@@ -43,6 +43,11 @@ class ActiveMarket:
     open_time: datetime
     close_time: datetime
     interval_minutes: float
+    # Kalshi Exchange Sharding: which exchange shard this market trades on.
+    # Order collateral is per-shard, so runner.py routes the order to this
+    # index and checks the account has a balance on it first. None if the
+    # markets endpoint didn't return the field (older API / pre-sharding).
+    exchange_index: int | None = None
 
 
 def _parse_time(value: str) -> datetime:
@@ -145,6 +150,7 @@ def find_active_markets(allowed_underlyings: frozenset[str] | None = None) -> li
                 close_time = _parse_time(market["close_time"])
             except (KeyError, ValueError):
                 continue
+            raw_exchange_index = market.get("exchange_index")
             active.append(ActiveMarket(
                 ticker=market["ticker"],
                 event_ticker=market.get("event_ticker", ""),
@@ -155,6 +161,7 @@ def find_active_markets(allowed_underlyings: frozenset[str] | None = None) -> li
                 open_time=open_time,
                 close_time=close_time,
                 interval_minutes=interval_minutes,
+                exchange_index=int(raw_exchange_index) if raw_exchange_index is not None else None,
             ))
     return active
 

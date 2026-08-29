@@ -47,8 +47,12 @@ if ! kill -0 "$RUNNER_PID" 2>/dev/null; then
 fi
 echo "runner.py started, PID $RUNNER_PID, logging to $LOG_FILE"
 
-# Kill-switch: same $100 baseline / -15% threshold used throughout this
-# session -- adjust here if the funded balance ever changes.
+# Kill-switch: baseline is the account's CURRENT equity (cash + open-position
+# cost basis), fetched fresh here -- never a hardcoded funding amount. See
+# pnl_killswitch.sh's header and start_live.ps1: a stale baseline either fires
+# on the first check (if the account has since fallen) or, as this script did
+# before, sits far below the real balance and never protects anything. -10%
+# threshold, matching start_live.ps1.
 #
 # RESOLUTION_ALPHA_DISABLE_KILLSWITCH (from .env): when set truthy
 # (1/true/yes/on, case-insensitive) the equity-loss watcher is NOT armed and
@@ -61,16 +65,29 @@ case "$_ks_disabled" in
         echo "WARNING: kill-switch DISABLED via RESOLUTION_ALPHA_DISABLE_KILLSWITCH -- runner.py (PID $RUNNER_PID) is running UNSUPERVISED with no automatic equity-loss stop."
         ;;
     *)
-        RUNNER_PID="$RUNNER_PID" BASELINE_DOLLARS=100 THRESHOLD_PCT=-15 \
+        CURRENT_EQUITY=$("$PYTHON" -c "
+from kalshi_gateway import KalshiTradingClient
+c = KalshiTradingClient()
+balance = float(c.get_balance()['balance_dollars'])
+positions = c.get_positions()['market_positions']
+exposure = sum(float(p['market_exposure_dollars']) for p in positions)
+print(round(balance + exposure, 4))
+" 2>/dev/null || true)
+        if [ -z "$CURRENT_EQUITY" ]; then
+            echo "failed to fetch current equity for kill-switch baseline -- aborting. runner.py (PID $RUNNER_PID) is still running; stop it manually if needed."
+            exit 1
+        fi
+        echo "kill-switch baseline: current equity \$$CURRENT_EQUITY"
+        RUNNER_PID="$RUNNER_PID" BASELINE_DOLLARS="$CURRENT_EQUITY" THRESHOLD_PCT=-10 \
             nohup bash pnl_killswitch.sh > "logs/killswitch_$(date +%Y%m%d_%H%M%S).log" 2>&1 &
         KILLSWITCH_PID=$!
         echo "$KILLSWITCH_PID" > "$KILLSWITCH_PID_FILE"
         disown
-        echo "kill-switch armed, PID $KILLSWITCH_PID (baseline \$100, threshold -15%)"
+        echo "kill-switch armed, PID $KILLSWITCH_PID (baseline \$$CURRENT_EQUITY, threshold -10%)"
         ;;
 esac
 
 echo ""
 echo "Both running. Close this window freely -- they keep running in the background."
 echo "Run stop_live (or stop_live.bat) to stop everything."
-read -p "Press Enter to close this window..."
+read -p "Press Enter to close this window..." _ || true

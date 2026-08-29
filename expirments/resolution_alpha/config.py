@@ -196,6 +196,29 @@ MAX_CYCLE_CONTRACTS = _float_env("RESOLUTION_ALPHA_MAX_CYCLE_CONTRACTS", 100)
 # guaranteed to clip on every single trade.
 KELLY_FRACTION = _float_env("RESOLUTION_ALPHA_KELLY_FRACTION", 0.5)
 
+# Which probability the Kelly position sizer (_size_for_edge -> _kelly_contracts
+# in runner.py) uses as the win-probability input `q`.
+#
+# Default (false): effective_probability = min(model_prob, top_of_book +
+# MAX_TRUSTED_EDGE_PROB) -- model-driven, clamped toward the market only when
+# the model diverges upward.
+#
+# True: the MARKET's own view -- top_of_book_price + MAX_TRUSTED_EDGE_PROB --
+# with the model's raw probability dropped from the min() entirely. The buffer
+# is added because a bare top-of-book probability equals the price you'd pay,
+# which makes Kelly's (q - p) edge term zero and sizes to nothing; adding the
+# same divergence buffer the model-cap already uses gives Kelly a positive
+# edge to work with. In the common case for this strategy (model >= market +
+# buffer) the two are already equal and this toggle is a no-op; they differ
+# only when the model is LESS confident than the market, where this sizes off
+# the market's number instead of the lower model one.
+#
+# Only the Kelly *cap* changes. The MIN_EDGE_DOLLARS trade gate still uses
+# effective_probability, so this does not change which trades are taken, only
+# how large Kelly lets them get. No effect while MAX_SIZE_MODE is on (that
+# path skips _size_for_edge). Off by default.
+KELLY_USE_MARKET_PROB = _bool_env("RESOLUTION_ALPHA_KELLY_USE_MARKET_PROB", False)
+
 # When enabled, bypasses Kelly/edge-based sizing (_size_for_edge in runner.py)
 # entirely: each trade instead just takes the largest whole-contract size
 # supported by whichever binds first -- the book's own available depth for
