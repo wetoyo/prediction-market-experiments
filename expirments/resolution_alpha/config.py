@@ -102,11 +102,24 @@ ENTRY_WINDOW_EXPONENT = _float_env("RESOLUTION_ALPHA_ENTRY_WINDOW_EXPONENT", 2.0
 # of floor trades away a small amount of the latest, most-confident timing
 # information for materially reducing exposure to both failure modes at
 # once -- see runner.py's evaluate_and_maybe_trade for the gate itself.
-MIN_ENTRY_SECONDS_LEFT = _float_env("RESOLUTION_ALPHA_MIN_ENTRY_SECONDS_LEFT", 3.0)
+#
+# Raised 3.0 -> 10.0 on 2026-08-30. Calibration against live/logs/samples.db
+# (see MIN_STRIKE_DISTANCE_FRAC / TAIL_SIGMA_DIFFUSION_FLOOR_FRAC below) showed
+# that on rows the live gate passed (model_prob >= 0.97), the realized move to
+# settlement runs a median 2.4x sigma_used in the last 10-20s and a p90 of
+# 11-17x in the last 10s -- i.e. inside ~10s the model is effectively blind and
+# its z-score is noise, on top of the fill-execution risk this floor already
+# existed for. Once MIN_STRIKE_DISTANCE_FRAC + the sigma floor below are applied
+# the historical loser set is already empty at every seconds floor from 0 to 20,
+# so this is pure insurance against the fat tail rather than a measured fix; 10s
+# keeps ~86% of historical trade volume (15s would keep ~79%). Tune up via
+# RESOLUTION_ALPHA_MIN_ENTRY_SECONDS_LEFT for more caution. First entries only;
+# MIN_STACK_ENTRY_SECONDS_LEFT (30s) governs top-ups on a held market.
+MIN_ENTRY_SECONDS_LEFT = _float_env("RESOLUTION_ALPHA_MIN_ENTRY_SECONDS_LEFT", 10.0)
 
 # Added 2026-08-30. A higher seconds-left floor that applies ONLY to additional
-# tranches on a market already held (a first entry still uses the 3.0s floor
-# above). Rationale from the 2026-08-29 KXBTC15M-26AUG291945-45 post-mortem:
+# tranches on a market already held (a first entry uses the MIN_ENTRY_SECONDS_LEFT
+# floor above). Rationale from the 2026-08-29 KXBTC15M-26AUG291945-45 post-mortem:
 # the position is already sized, so the only thing a late top-up adds is more
 # exposure decided on the least reliable read the model produces -- inside the
 # last ~20s the estimate is dominated by settlement-averaging noise
@@ -170,11 +183,52 @@ MIN_EDGE_DOLLARS = _float_env("RESOLUTION_ALPHA_MIN_EDGE", 0.02)
 #     the time (partly data-pipeline noise / rare CF-Benchmarks dislocation, but
 #     real money either way).
 # SIGMA_SAFETY_FACTOR widens sigma_used in probability.py (both regimes) before
-# the z-score; 1.25 flattens the 0.97-0.99 band without hurting Brier. It does
-# NOT reduce the reversal *count* (z sign is unchanged) -- it stops the model
-# reporting false certainty to the Kelly/edge sizer, which is where the damage
-# compounded.
-SIGMA_SAFETY_FACTOR = _float_env("RESOLUTION_ALPHA_SIGMA_SAFETY_FACTOR", 1.25)
+# the z-score. It does NOT reduce the reversal *count* (z sign is unchanged) --
+# it stops the model reporting false certainty to the Kelly/edge sizer, which is
+# where the damage compounded.
+#
+# Raised 1.25 -> 1.6 on 2026-08-30 after a much worse live day (5 losses in ~19
+# real trades, all settling within 3.3 bp of the strike, four within 0.8 bp --
+# balance $136 -> $0.40). Re-calibrated against samples.db: on gated rows the
+# realized settlement move is a median ~2.4x sigma_used at 10-20s left and ~1.5x
+# at 20-35s. 1.25 doesn't dent a 2x central error. Most of that correction is
+# carried by TAIL_SIGMA_DIFFUSION_FLOOR_FRAC below (which is tau-shaped); this
+# factor is the flat top-up on both regimes.
+SIGMA_SAFETY_FACTOR = _float_env("RESOLUTION_ALPHA_SIGMA_SAFETY_FACTOR", 1.6)
+
+# Floor on sigma_used inside the settlement-averaging window (probability.py's
+# `else` branch), as a fraction of a plain diffusion move -- sigma_price_rate *
+# sqrt(seconds_to_close) -- over the time still left. Added 2026-08-30.
+#
+# The settlement-window branch multiplies an Asian-average sigma (sigma^2*tau/3)
+# by a further (tau/60) weight, so sigma_used shrinks as ~tau^1.5 into the close.
+# That is only correct if the already-elapsed part of the 60s settlement average
+# is known *exactly*. It isn't: spot_history is a Coinbase proxy for CF
+# Benchmarks' settlement index (documented basis risk, see
+# TRUSTED_SETTLEMENT_UNDERLYINGS) and the realized average is built from sparse
+# ~2s REST samples. That missing uncertainty term is what let the model stamp
+# 0.99+ on markets that were genuine coin-flips sitting on the strike with 15-50s
+# left. 0.5 = never let remaining uncertainty drop below half a diffusion move
+# over the remaining time; at 20s left this widens sigma_used ~2.6x vs the raw
+# formula, tapering to ~1.0x (no-op) by ~55s left where the raw formula is
+# already close to calibrated. Set to 0.0 to disable and get the pure tau^1.5
+# formula back.
+TAIL_SIGMA_DIFFUSION_FLOOR_FRAC = _float_env("RESOLUTION_ALPHA_TAIL_SIGMA_DIFFUSION_FLOOR_FRAC", 0.5)
+
+# Hard minimum distance between spot and the strike, as a fraction of spot, for
+# a first entry to be allowed at all (runner.py's evaluate_and_maybe_trade).
+# Added 2026-08-30. Calibration against samples.db, restricted to rows the live
+# gate passes (model_prob >= 0.97): the model is essentially perfect (99.97%,
+# ~115k rows) EXCEPT in a narrow band roughly 1-4 bp from the strike, where it
+# resolves ~90-93% -- and every one of the 29 historical losers, plus all 5 of
+# the 2026-08-29/30 live losers, sits in that band. Requiring |spot-strike|/spot
+# >= 5e-4 (~$39 on BTC at $78k, ~$1.20 on ETH at $2450) cuts 29/29 of those
+# historical losers while keeping ~99% of trade volume: the marginal band is
+# where the widened sigma above is least trustworthy and the market's own price
+# (0.90-0.95) already says "coin flip", so there is little real edge to give up.
+# This is a distance gate, not a probability gate -- it blocks even a
+# 0.99-confident call when spot is parked on the strike. Set to 0.0 to disable.
+MIN_STRIKE_DISTANCE_FRAC = _float_env("RESOLUTION_ALPHA_MIN_STRIKE_DISTANCE_FRAC", 0.0005)
 
 # Hard ceiling on the model's own favored-side probability, applied after the
 # normal CDF in probability.py. The data shows the model never actually
@@ -237,6 +291,21 @@ EXIT_Z_SCORE_DROP_THRESHOLD = _float_env("RESOLUTION_ALPHA_EXIT_Z_SCORE_DROP_THR
 # the position stays eligible -- if the move then develops, the exit still
 # fires on a later tick. Set to 0.0 to disable and go back to z-drop only.
 EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC = _float_env("RESOLUTION_ALPHA_EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC", 0.0005)
+
+# Added 2026-08-30. Below this many seconds to close, a model side-flip exit
+# (trigger (a) in _check_exit_conditions) must ALSO clear the
+# EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC spot-move floor before it fires -- i.e. inside
+# the last ~20s a bare flip is no longer enough on its own. Rationale: live on
+# 2026-08-29 KXBTC15M-26AUG291415-15 the model flipped YES->NO at ~18s left on a
+# ~2 bp spot wiggle that touched the strike and mean-reverted; the flip exit
+# dumped a YES position at 0.11 that then resolved YES (a ~$100 self-inflicted
+# loss). Inside the settlement window the flip itself is driven by the same
+# collapsing-sigma settlement blend the spot-move floor exists to filter, so
+# near expiry it gets the same confirmation requirement as a z-drop. Outside
+# this window a flip still fires immediately (sigma hasn't collapsed yet, so a
+# full inversion there is far more likely to be real). Set to 0.0 to always fire
+# flip exits immediately regardless of time left (the pre-2026-08-30 behavior).
+FLIP_EXIT_CONFIRM_SECONDS = _float_env("RESOLUTION_ALPHA_FLIP_EXIT_CONFIRM_SECONDS", 20.0)
 
 # Hard ceiling on position size per market, in contracts. This is not
 # usually the size actually traded -- runner.py's _kelly_contracts sizes
