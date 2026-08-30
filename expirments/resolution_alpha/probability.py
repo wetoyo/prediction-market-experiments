@@ -25,12 +25,35 @@ The realized-vol estimate is a simple stdev of log returns. Both this and
 the settlement-window blend are flagged in README.md's backtest plan as
 things to validate/refine against real resolved-market data before sizing
 up -- this module is a reasonable starting point, not a validated model.
+
+Calibration pass (2026-08-29) against live/logs/samples.db (2.36M evaluated
+ticks / 249k resolved): the raw model is overconfident on the traded band and
+its Gaussian tail is far too thin (realized outcomes flatten to ~1-3% wrong
+from z~2.5 out to z~6, where the Gaussian says ~1e-3 -> ~0). Per-sqrt-second
+vol does NOT ramp into the close, but conditional vol is fat-tailed (~10% of
+positions see 3x+ the trailing estimate after entry). Two blunt corrections
+applied below: config.SIGMA_SAFETY_FACTOR widens sigma_used, config.MODEL_PROB_CAP
+clamps the reported probability. See those config docstrings for the numbers.
+
+Follow-up pass (2026-08-30) after a live day that lost ~$135 across 5 reversals,
+all on markets settling within 3.3 bp of the strike: the settlement-window
+branch's ~tau^1.5 sigma shrink was the dominant error -- realized settlement
+moves ran a median 1.5-2.4x sigma_used at 15-35s left. Added
+config.TAIL_SIGMA_DIFFUSION_FLOOR_FRAC (a tau-shaped floor on sigma_used here),
+bumped SIGMA_SAFETY_FACTOR 1.25 -> 1.6, and added an entry-side distance gate
+(config.MIN_STRIKE_DISTANCE_FRAC, enforced in runner.py) since even the widened
+model is only ~90-93% right in the 1-4 bp band.
 """
 
 import math
 from dataclasses import dataclass
 
-from config import SETTLEMENT_AVERAGE_SECONDS
+from config import (
+    MODEL_PROB_CAP,
+    SETTLEMENT_AVERAGE_SECONDS,
+    SIGMA_SAFETY_FACTOR,
+    TAIL_SIGMA_DIFFUSION_FLOOR_FRAC,
+)
 
 
 def _normal_cdf(z: float) -> float:
@@ -117,13 +140,33 @@ def estimate_probability(
         weight_of_remainder = remaining_tau / SETTLEMENT_AVERAGE_SECONDS
         sigma_used = math.sqrt(variance_of_remainder_avg) * weight_of_remainder
 
-    sigma_used = max(sigma_used, 1e-9)  # avoid div-by-zero as remaining time -> 0
+        # The line above shrinks sigma_used as ~tau^1.5 into the close, on the
+        # assumption the already-elapsed part of the settlement average is known
+        # exactly. It isn't (Coinbase proxy for CF Benchmarks, sparse REST
+        # samples), and calibration against live/logs/samples.db (2026-08-30)
+        # showed the realized settlement move running a median ~1.5-2.4x this
+        # sigma_used in the last 10-35s. Floor it at a fraction of a plain
+        # diffusion move over the time still left. See
+        # config.TAIL_SIGMA_DIFFUSION_FLOOR_FRAC.
+        diffusion_floor = (
+            TAIL_SIGMA_DIFFUSION_FLOOR_FRAC * sigma_price_rate * math.sqrt(seconds_to_close)
+        )
+        sigma_used = max(sigma_used, diffusion_floor)
+
+    # SIGMA_SAFETY_FACTOR: the raw sigma_used is calibration-tested (against
+    # live/logs/samples.db) to be too small -- the trailing realized-vol input
+    # misses ~10% of post-entry vol blow-ups and the Gaussian tail is too thin.
+    # Widen before the z-score. See config.SIGMA_SAFETY_FACTOR.
+    sigma_used = max(sigma_used * SIGMA_SAFETY_FACTOR, 1e-9)  # also avoids div-by-zero as tau -> 0
     signed_distance = settlement_estimate - strike
     z = signed_distance / sigma_used
 
     prob_above = _normal_cdf(z)
     prob_yes = prob_above if direction == "above" else (1.0 - prob_above)
-    prob_yes = min(max(prob_yes, 0.0), 1.0)
+    # MODEL_PROB_CAP: the model never actually resolves better than ~99.6%; clamp
+    # so it can't report false certainty to downstream sizing/edge. z and
+    # sigma_used are returned raw (exit monitoring compares z-drops).
+    prob_yes = min(max(prob_yes, 1.0 - MODEL_PROB_CAP), MODEL_PROB_CAP)
 
     favored_side = "yes" if prob_yes >= 0.5 else "no"
     favored_probability = prob_yes if favored_side == "yes" else 1.0 - prob_yes
