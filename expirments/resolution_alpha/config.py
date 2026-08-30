@@ -155,6 +155,36 @@ MIN_FAVORED_PROBABILITY = _float_env("RESOLUTION_ALPHA_MIN_PROB", 0.97)
 # fees, in dollars.
 MIN_EDGE_DOLLARS = _float_env("RESOLUTION_ALPHA_MIN_EDGE", 0.02)
 
+# --- Probability-model calibration corrections (added 2026-08-29) --------------
+# Calibrated against live/logs/samples.db (2.36M evaluated ticks / 249k resolved
+# / 2026-08-07..28), replaying the settlement model in probability.py against
+# realized outcomes. Findings:
+#   * Per-sqrt-second realized vol does NOT systematically expand into the close
+#     (bucketed rms/sqrt(s) is flat-to-noisy over the last 90s). But conditional
+#     vol is fat-tailed: forward-realized / trailing sigma has median ~0.76 yet
+#     p90 ~2.9 -- ~10% of positions hit a 3x+ post-entry vol blow-out the
+#     trailing estimator cannot anticipate.
+#   * The Gaussian tail is too thin: on rows the live gate would trade
+#     (model_prob >= 0.97), the 0.97-0.98 confidence band resolved ~0.90 (not
+#     0.976), and model "~1.0" calls resolve against the favored side ~0.4% of
+#     the time (partly data-pipeline noise / rare CF-Benchmarks dislocation, but
+#     real money either way).
+# SIGMA_SAFETY_FACTOR widens sigma_used in probability.py (both regimes) before
+# the z-score; 1.25 flattens the 0.97-0.99 band without hurting Brier. It does
+# NOT reduce the reversal *count* (z sign is unchanged) -- it stops the model
+# reporting false certainty to the Kelly/edge sizer, which is where the damage
+# compounded.
+SIGMA_SAFETY_FACTOR = _float_env("RESOLUTION_ALPHA_SIGMA_SAFETY_FACTOR", 1.25)
+
+# Hard ceiling on the model's own favored-side probability, applied after the
+# normal CDF in probability.py. The data shows the model never actually
+# achieves better than ~99.6% realized accuracy, so anything it reports above
+# this is noise at best and overconfidence that misleads sizing at worst.
+# With MIN_FAVORED_PROBABILITY=0.97 and MIN_EDGE_DOLLARS=0.02 this also caps the
+# max entry price near ~0.97 (fills in the overconfident 0.97-0.99 band stop).
+# Set to 1.0 to disable.
+MODEL_PROB_CAP = _float_env("RESOLUTION_ALPHA_MODEL_PROB_CAP", 0.99)
+
 # Added 2026-08-06 per explicit user request: this strategy has no exit logic
 # by design (see runner.py's module docstring -- positions normally ride to
 # resolution, since they're only opened in the final seconds before close).
