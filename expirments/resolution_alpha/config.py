@@ -252,9 +252,13 @@ TAIL_SIGMA_DIFFUSION_FLOOR_FRAC = _float_env("RESOLUTION_ALPHA_TAIL_SIGMA_DIFFUS
 # (1 bp, ~$8 on BTC at $87k, ~$0.30 on ETH at $3150) blocks the sub-1-bp
 # coin-flips where the four worst losses sat while keeping ~60% of the historical
 # BTC/ETH 15-min book. TAIL_SIGMA_DIFFUSION_FLOOR_FRAC above is the structural
-# fix for near-strike overconfidence; this gate is now a light backstop on top,
-# not the primary defense. Set to 0.0 to disable entirely.
-MIN_STRIKE_DISTANCE_FRAC = _float_env("RESOLUTION_ALPHA_MIN_STRIKE_DISTANCE_FRAC", 0.0001)
+# fix for near-strike overconfidence; this gate is a light backstop on top.
+#
+# Then set to 0.0 (disabled) on 2026-08-30 per user request -- get the strategy
+# trading again on the sigma floor alone and revisit the distance gate with
+# fresh BTC/ETH near-strike outcome data. Re-enable via
+# RESOLUTION_ALPHA_MIN_STRIKE_DISTANCE_FRAC (1e-4 is the analyzed starting point).
+MIN_STRIKE_DISTANCE_FRAC = _float_env("RESOLUTION_ALPHA_MIN_STRIKE_DISTANCE_FRAC", 0.0)
 
 # Hard ceiling on the model's own favored-side probability, applied after the
 # normal CDF in probability.py. The data shows the model never actually
