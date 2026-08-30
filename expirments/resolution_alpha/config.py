@@ -104,6 +104,20 @@ ENTRY_WINDOW_EXPONENT = _float_env("RESOLUTION_ALPHA_ENTRY_WINDOW_EXPONENT", 2.0
 # once -- see runner.py's evaluate_and_maybe_trade for the gate itself.
 MIN_ENTRY_SECONDS_LEFT = _float_env("RESOLUTION_ALPHA_MIN_ENTRY_SECONDS_LEFT", 3.0)
 
+# Added 2026-08-30. A higher seconds-left floor that applies ONLY to additional
+# tranches on a market already held (a first entry still uses the 3.0s floor
+# above). Rationale from the 2026-08-29 KXBTC15M-26AUG291945-45 post-mortem:
+# the position is already sized, so the only thing a late top-up adds is more
+# exposure decided on the least reliable read the model produces -- inside the
+# last ~20s the estimate is dominated by settlement-averaging noise
+# (probability.py), and that tick is also where the model flipped sides
+# entirely. A same-side add that close to close is nearly all downside. 30s
+# leaves the first ~60s of the 90s entry window open for stacking and closes
+# the noisy tail. Opposite-side flips are handled separately (runner.py's
+# side-flip guard) and never reach this check. Set at/below MIN_ENTRY_SECONDS_LEFT
+# to disable (every held-market add then uses the same floor as a first entry).
+MIN_STACK_ENTRY_SECONDS_LEFT = _float_env("RESOLUTION_ALPHA_MIN_STACK_ENTRY_SECONDS_LEFT", 30.0)
+
 # How far ahead of close_time to start tracking a market's order book over the
 # websocket (ws_feed.py), vs. not subscribing at all yet. Needs to be bigger
 # than ENTRY_WINDOW_SECONDS so the book snapshot has arrived and settled before
@@ -150,6 +164,14 @@ MIN_EDGE_DOLLARS = _float_env("RESOLUTION_ALPHA_MIN_EDGE", 0.02)
 # relative to the z-score *at entry*, attempt a one-shot best-effort exit sell
 # ("just incase the sell somehow gets filled" -- acknowledged as unlikely to
 # fill in a thin, fast-moving, near-expiry book, but worth trying).
+#
+# This threshold (and the spot-move floor below) gate only the z-drop trigger.
+# A second, independent trigger was added 2026-08-30: if the model swings all
+# the way to favoring the OPPOSITE side of a held position with entry-grade
+# conviction (opposite side >= MIN_FAVORED_PROBABILITY), _check_exit_conditions
+# closes the position immediately, bypassing both gates here -- a full
+# inversion is a stronger signal than any bare z-drop. See runner.py's
+# side-flip guard (evaluate_and_maybe_trade) and _check_exit_conditions.
 #
 # Raised 3.0 -> 4.0 on 2026-08-29 after a post-mortem on two live exits that
 # day (KXBTC15M-26AUG291400-00, KXBTC15M-26AUG291415-15). The first was a
