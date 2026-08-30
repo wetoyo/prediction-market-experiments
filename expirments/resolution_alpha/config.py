@@ -115,7 +115,14 @@ ENTRY_WINDOW_EXPONENT = _float_env("RESOLUTION_ALPHA_ENTRY_WINDOW_EXPONENT", 2.0
 # keeps ~86% of historical trade volume (15s would keep ~79%). Tune up via
 # RESOLUTION_ALPHA_MIN_ENTRY_SECONDS_LEFT for more caution. First entries only;
 # MIN_STACK_ENTRY_SECONDS_LEFT (30s) governs top-ups on a held market.
-MIN_ENTRY_SECONDS_LEFT = _float_env("RESOLUTION_ALPHA_MIN_ENTRY_SECONDS_LEFT", 10.0)
+#
+# Lowered 10.0 -> 5.0 later on 2026-08-30. With the sigma floor + distance gate
+# live, the runner went 10h / zero entries: the 10s floor plus the widened sigma
+# had squeezed the model's edge under MIN_EDGE_DOLLARS on nearly every setup. The
+# calibration never attributed a single historical loser to this floor at any
+# value from 0 to 20s, so it was the cheapest thing to give back. 5s still covers
+# the fill-execution risk this floor originally existed for.
+MIN_ENTRY_SECONDS_LEFT = _float_env("RESOLUTION_ALPHA_MIN_ENTRY_SECONDS_LEFT", 5.0)
 
 # Added 2026-08-30. A higher seconds-left floor that applies ONLY to additional
 # tranches on a market already held (a first entry uses the MIN_ENTRY_SECONDS_LEFT
@@ -194,7 +201,15 @@ MIN_EDGE_DOLLARS = _float_env("RESOLUTION_ALPHA_MIN_EDGE", 0.02)
 # at 20-35s. 1.25 doesn't dent a 2x central error. Most of that correction is
 # carried by TAIL_SIGMA_DIFFUSION_FLOOR_FRAC below (which is tau-shaped); this
 # factor is the flat top-up on both regimes.
-SIGMA_SAFETY_FACTOR = _float_env("RESOLUTION_ALPHA_SIGMA_SAFETY_FACTOR", 1.6)
+#
+# Trimmed 1.6 -> 1.4 later on 2026-08-30. 1.6 plus the tau-shaped floor plus the
+# new MIN_STRIKE_DISTANCE_FRAC gate stacked up to ~zero entries over 10h live --
+# model edge compressed below MIN_EDGE_DOLLARS on nearly every setup. The distance
+# gate now handles the near-strike band that motivated 1.6 directly, so the flat
+# multiplier can come back toward its pre-2026-08-30 level; the tau-shaped
+# diffusion floor keeps carrying the settlement-window correction. Still above
+# the original 1.25.
+SIGMA_SAFETY_FACTOR = _float_env("RESOLUTION_ALPHA_SIGMA_SAFETY_FACTOR", 1.4)
 
 # Floor on sigma_used inside the settlement-averaging window (probability.py's
 # `else` branch), as a fraction of a plain diffusion move -- sigma_price_rate *
