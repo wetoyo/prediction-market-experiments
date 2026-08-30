@@ -232,18 +232,29 @@ TAIL_SIGMA_DIFFUSION_FLOOR_FRAC = _float_env("RESOLUTION_ALPHA_TAIL_SIGMA_DIFFUS
 
 # Hard minimum distance between spot and the strike, as a fraction of spot, for
 # a first entry to be allowed at all (runner.py's evaluate_and_maybe_trade).
-# Added 2026-08-30. Calibration against samples.db, restricted to rows the live
-# gate passes (model_prob >= 0.97): the model is essentially perfect (99.97%,
-# ~115k rows) EXCEPT in a narrow band roughly 1-4 bp from the strike, where it
-# resolves ~90-93% -- and every one of the 29 historical losers, plus all 5 of
-# the 2026-08-29/30 live losers, sits in that band. Requiring |spot-strike|/spot
-# >= 5e-4 (~$39 on BTC at $78k, ~$1.20 on ETH at $2450) cuts 29/29 of those
-# historical losers while keeping ~99% of trade volume: the marginal band is
-# where the widened sigma above is least trustworthy and the market's own price
-# (0.90-0.95) already says "coin flip", so there is little real edge to give up.
-# This is a distance gate, not a probability gate -- it blocks even a
-# 0.99-confident call when spot is parked on the strike. Set to 0.0 to disable.
-MIN_STRIKE_DISTANCE_FRAC = _float_env("RESOLUTION_ALPHA_MIN_STRIKE_DISTANCE_FRAC", 0.0005)
+# Added 2026-08-30. This is a distance gate, not a probability gate -- it blocks
+# even a 0.99-confident call when spot is parked on the strike, because that is
+# exactly where the model's overconfidence and the widened sigma above are least
+# trustworthy and the losers cluster.
+#
+# First cut set this at 5e-4, justified as "cuts 29/29 historical losers, keeps
+# ~99% of volume". Both halves of that were measured against the wrong set: the
+# 29 losers are almost all non-BTC/ETH coins (SOL/XRP/DOGE/NEAR/BNB) the live
+# config no longer trades, and "99% of volume" was 99% of ~94k *evaluation
+# ticks*, which are mostly daily markets sitting far from the strike. Against the
+# 186 rows the strategy actually traded, 5e-4 blocks ~89% of the BTC/ETH 15-min
+# book -- and in-sample every one of those blocked trades won (the BTC/ETH book
+# was 32/32 on resolved trades in samples.db; it has zero BTC/ETH losses, so it
+# cannot pin the threshold on its own).
+#
+# Lowered 5e-4 -> 1e-4 on 2026-08-30. The one real signal is the 2026-08-29/30
+# blowup: 5 losers all within 3.3 bp of the strike, four within 0.8 bp. 1e-4
+# (1 bp, ~$8 on BTC at $87k, ~$0.30 on ETH at $3150) blocks the sub-1-bp
+# coin-flips where the four worst losses sat while keeping ~60% of the historical
+# BTC/ETH 15-min book. TAIL_SIGMA_DIFFUSION_FLOOR_FRAC above is the structural
+# fix for near-strike overconfidence; this gate is now a light backstop on top,
+# not the primary defense. Set to 0.0 to disable entirely.
+MIN_STRIKE_DISTANCE_FRAC = _float_env("RESOLUTION_ALPHA_MIN_STRIKE_DISTANCE_FRAC", 0.0001)
 
 # Hard ceiling on the model's own favored-side probability, applied after the
 # normal CDF in probability.py. The data shows the model never actually
