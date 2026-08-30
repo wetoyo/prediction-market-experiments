@@ -23,10 +23,7 @@ Cycle (see README.md and live/README.md for the full design):
      market already held need more runway than a first entry
      (config.MIN_STACK_ENTRY_SECONDS_LEFT), and if the model has swung all the
      way to favoring the *opposite* side of a market we hold, that is treated
-     as an exit signal, not a new entry (see the side-flip guard). A first
-     entry is also refused outright when spot sits within
-     config.MIN_STRIKE_DISTANCE_FRAC of the strike -- a coin flip the model
-     still tends to stamp 0.97+ (added 2026-08-30).
+     as an exit signal, not a new entry (see the side-flip guard).
   4. Positions normally ride to resolution -- entries only happen in the
      final seconds before close, so there's rarely time for anything to
      develop. As a defensive backstop (added 2026-08-06, see
@@ -34,11 +31,10 @@ Cycle (see README.md and live/README.md for the full design):
      every tick against a fresh probability estimate. A single best-effort
      exit sell attempt fires on either of two triggers: (a) the model has
      flipped to favoring the opposite side with entry-grade conviction while
-     we held the position (added 2026-08-30 -- a full inversion; fires
-     immediately when more than config.FLIP_EXIT_CONFIRM_SECONDS remain, else
-     it must also clear the (b) spot-move floor), or (b) a sudden adverse move
-     in the model's own sigma units (relative to the z-score at entry) AND a
-     minimum absolute move in the underlying itself (added 2026-08-29, see
+     we held the position (added 2026-08-30 -- a full inversion, fires
+     immediately), or (b) a sudden adverse move in the model's own sigma units
+     (relative to the z-score at entry) AND a minimum absolute move in the
+     underlying itself (added 2026-08-29, see
      config.EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC) -- the second half of (b) stops
      near-expiry noise, amplified by sigma_used collapsing as tau->0, from
      tripping the first. See _check_exit_conditions.
@@ -442,7 +438,7 @@ _STAT_KEYS = (
     "skip_blacklisted", "skip_budget_exhausted", "skip_orderbook_failed",
     "skip_no_liquidity", "skip_low_market_prob", "skip_dynamic_window", "skip_min_seconds_left",
     "skip_ceiling_lt1", "skip_no_edge_size", "skip_no_fillable_depth", "skip_low_edge", "skip_no_bankroll",
-    "skip_no_shard_collateral", "skip_side_flip_hold", "skip_near_strike",
+    "skip_no_shard_collateral", "skip_side_flip_hold",
 )
 
 
@@ -465,7 +461,7 @@ def _log_stats_summary(stats: dict, window_seconds: float) -> None:
         "eval summary (last %.0fs): in_window=%d traded=%d | untrusted_underlying=%d no_spot=%d no_vol=%d low_model_prob=%d "
         "blacklisted=%d budget=%d orderbook_failed=%d no_liquidity=%d "
         "low_market_prob=%d dynamic_window=%d min_seconds_left=%d ceiling=%d no_edge_size=%d no_fillable_depth=%d low_edge=%d "
-        "no_bankroll=%d no_shard_collateral=%d side_flip_hold=%d near_strike=%d",
+        "no_bankroll=%d no_shard_collateral=%d side_flip_hold=%d",
         window_seconds, stats["in_window"], stats["traded"],
         stats["skip_untrusted_underlying"],
         stats["skip_no_spot"], stats["skip_no_vol"], stats["skip_low_model_prob"],
@@ -474,7 +470,6 @@ def _log_stats_summary(stats: dict, window_seconds: float) -> None:
         stats["skip_dynamic_window"], stats["skip_min_seconds_left"], stats["skip_ceiling_lt1"], stats["skip_no_edge_size"],
         stats["skip_no_fillable_depth"], stats["skip_low_edge"],
         stats["skip_no_bankroll"], stats["skip_no_shard_collateral"], stats["skip_side_flip_hold"],
-        stats["skip_near_strike"],
     )
 
 
@@ -638,7 +633,6 @@ def _finalize_sample(sample_id: int | None, *, traded: bool, skip_reason: str | 
 def _diagnostic_skip_reasons(
     market: ActiveMarket,
     estimate,
-    spot: float,
     cycle_state: dict,
     ws_feed: KalshiWebsocketFeed,
     seconds_left: float,
@@ -672,9 +666,6 @@ def _diagnostic_skip_reasons(
 
     if estimate.favored_probability < config.MIN_FAVORED_PROBABILITY:
         reasons.append("low_model_prob")
-
-    if spot and abs(spot - market.strike) / spot < config.MIN_STRIKE_DISTANCE_FRAC:
-        reasons.append("near_strike")
 
     market_blacklist = cycle_state.get("market_blacklist", set())
     if market.ticker in market_blacklist:
@@ -812,15 +803,9 @@ async def _check_exit_conditions(
         # held this position (see evaluate_and_maybe_trade's side-flip guard) --
         # the opposite side cleared the 0.97 entry bar, i.e. the model now puts
         # our held side below ~0.03. That is a strictly stronger signal than a
-        # bare z-drop, so it fires immediately, bypassing the z-drop threshold --
-        # AND, when more than config.FLIP_EXIT_CONFIRM_SECONDS remain, the
-        # spot-move floor too. Inside that window the flip is being produced by
-        # the same collapsing-sigma settlement blend the spot-move floor exists
-        # to filter (2026-08-30, KXBTC15M-26AUG291415-15: model flipped on a
-        # ~2 bp wiggle at 18s left, exit dumped a winner at 0.11), so near expiry
-        # a flip has to clear the same move floor as a z-drop.
+        # bare z-drop, so it fires immediately, bypassing BOTH the z-drop
+        # threshold and the spot-move floor below.
         flip_triggered = bool(position.get("exit_on_flip"))
-        flip_needs_confirm = flip_triggered and seconds_left < config.FLIP_EXIT_CONFIRM_SECONDS
 
         # Trigger (b): a sudden adverse z-drop for our held side, AND a real
         # move in the underlying. The z-drop alone can't tell a regime break
@@ -831,23 +816,22 @@ async def _check_exit_conditions(
         # If the z-drop clears but the move floor doesn't, log once and keep the
         # position eligible: a move that's really developing clears the floor on
         # a later tick and the exit fires then.
-        if not flip_triggered and z_drop < config.EXIT_Z_SCORE_DROP_THRESHOLD:
-            continue
-        if (not flip_triggered or flip_needs_confirm) and (
-            adverse_move_frac < config.EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC
-        ):
-            if not position.get("exit_deferred_logged"):
-                _log_despite_lightweight_mode(
-                    logging.WARNING,
-                    "%s EXIT (%s) signalled but underlying only moved %.3f%% from entry "
-                    "(floor %.3f%%) -- market has not confirmed; holding, still monitoring "
-                    "(z-drop %.2f, %.0fs left)",
-                    ticker, "side-flip" if flip_triggered else "z-drop",
-                    adverse_move_frac * 100.0, config.EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC * 100.0,
-                    z_drop, seconds_left,
-                )
-                position["exit_deferred_logged"] = True
-            continue
+        if not flip_triggered:
+            if z_drop < config.EXIT_Z_SCORE_DROP_THRESHOLD:
+                continue
+            if adverse_move_frac < config.EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC:
+                if not position.get("exit_deferred_logged"):
+                    _log_despite_lightweight_mode(
+                        logging.WARNING,
+                        "%s EXIT z-drop %.2f >= %.2f but underlying only moved %.3f%% from entry "
+                        "(floor %.3f%%) -- model-only signal, market has not confirmed; holding, "
+                        "still monitoring (%.0fs left)",
+                        ticker, z_drop, config.EXIT_Z_SCORE_DROP_THRESHOLD,
+                        adverse_move_frac * 100.0, config.EXIT_MIN_ADVERSE_SPOT_MOVE_FRAC * 100.0,
+                        seconds_left,
+                    )
+                    position["exit_deferred_logged"] = True
+                continue
 
         _log_despite_lightweight_mode(
             logging.WARNING,
@@ -955,7 +939,7 @@ async def evaluate_and_maybe_trade(
     try:
         sample_id = _maybe_sample_market(market, estimate, spot, seconds_left, ws_feed)
         if sample_id is not None:
-            diagnostic_reasons = _diagnostic_skip_reasons(market, estimate, spot, cycle_state, ws_feed, seconds_left)
+            diagnostic_reasons = _diagnostic_skip_reasons(market, estimate, cycle_state, ws_feed, seconds_left)
     except Exception:
         logger.exception("sampling failed for %s (non-fatal, continuing to trade evaluation)", market.ticker)
 
@@ -1001,28 +985,6 @@ async def evaluate_and_maybe_trade(
         held["exit_on_flip"] = True
         stats["skip_side_flip_hold"] += 1
         _record_skip_sample("side_flip_hold")
-        return
-
-    # Strike-distance gate (added 2026-08-30). Even a 0.97+ model call is only
-    # ~90-93% reliable when spot is parked within ~1-4 bp of the strike -- every
-    # historical loser on a gated row, and all 5 of the 2026-08-29/30 live
-    # losers, sat in that band (they settled 0.2-3.3 bp from the strike). The
-    # settlement-window sigma floor (probability.py) makes the model's number
-    # less overconfident there but doesn't make the outcome any less of a coin
-    # flip. Refuse the entry outright when spot is that close. Placed after the
-    # side-flip guard so a held position that drifts into this band still gets
-    # routed to the exit backstop rather than silently ignored. See
-    # config.MIN_STRIKE_DISTANCE_FRAC.
-    strike_distance_frac = abs(spot - market.strike) / spot if spot else 0.0
-    if strike_distance_frac < config.MIN_STRIKE_DISTANCE_FRAC:
-        logger.debug(
-            "%s spot %.6f only %.5f%% from strike %.6f (< MIN_STRIKE_DISTANCE_FRAC=%.4f%%), skipping "
-            "regardless of model_prob=%.4f -- coin flip on the strike",
-            market.ticker, spot, strike_distance_frac * 100.0, market.strike,
-            config.MIN_STRIKE_DISTANCE_FRAC * 100.0, estimate.favored_probability,
-        )
-        stats["skip_near_strike"] += 1
-        _record_skip_sample("near_strike")
         return
 
     # z_favored (not gated on its own anymore -- removed 2026-08-06, user:
