@@ -715,7 +715,24 @@ def _diagnostic_skip_reasons(
     # its caller) but 0.0 keeps its skip-reason accounting meaningful instead
     # of throwing.
     bankroll = cycle_state.get("bankroll_dollars") or 0.0
-    max_contracts = min(config.MAX_CONTRACTS_PER_MARKET - already_filled_this_market, remaining_budget)
+    # Mirrors the real gate's per-market Kelly cap (2026-09-04) -- read-only:
+    # never writes cycle_state["market_kelly_caps"], since whether this
+    # diagnostic pass even runs depends on unrelated sampling config, and it
+    # must never be able to change what the real path computes (see this
+    # function's docstring). Falls back to computing its own estimate when
+    # the real path hasn't cached one yet this cycle.
+    market_kelly_caps = cycle_state.get("market_kelly_caps", {})
+    kelly_cap = market_kelly_caps.get(market.ticker)
+    if kelly_cap is None:
+        kelly_cap = _kelly_contracts(
+            _kelly_probability(effective_probability, top_of_book.avg_price),
+            top_of_book.avg_price, bankroll, config.KELLY_FRACTION,
+        )
+    max_contracts = min(
+        config.MAX_CONTRACTS_PER_MARKET - already_filled_this_market,
+        kelly_cap - already_filled_this_market,
+        remaining_budget,
+    )
     if max_contracts < 1:
         reasons.append("ceiling_lt1")
         return reasons
@@ -1168,16 +1185,16 @@ async def evaluate_and_maybe_trade(
 
     # Per-market fill tracking (replaces the old one-shot-per-market dedup,
     # 2026-08-06): a market can be bought more than once within its entry
-    # window now, as long as there's remaining capacity under
-    # MAX_CONTRACTS_PER_MARKET and it still clears every gate at the fresh
-    # price -- per explicit user request ("continuing to buy if there is
-    # available liquidity ... is good"). This does NOT reopen the old
-    # repeated-buy-attempt bug (buying 9 times in under a minute as the book
-    # thinned, 2026-08-05): that bug was re-buying at *deteriorating* edge:
-    # here, every additional buy still has to clear MIN_EDGE_DOLLARS and the
-    # Kelly cap at its own price, same as the first one, so a thinning book
-    # naturally stops further buys on its own once the edge is gone -- the ceiling below is
-    # just the hard backstop.
+    # window now, as long as there's remaining capacity under its per-market
+    # ceiling (see market_kelly_caps below) and it still clears every gate at
+    # the fresh price -- per explicit user request ("continuing to buy if
+    # there is available liquidity ... is good"). This does NOT reopen the
+    # old repeated-buy-attempt bug (buying 9 times in under a minute as the
+    # book thinned, 2026-08-05): that bug was re-buying at *deteriorating*
+    # edge: here, every additional buy still has to clear MIN_EDGE_DOLLARS
+    # and _size_for_edge's own per-tranche Kelly cap at its own price, same
+    # as the first one, so a thinning book naturally stops further buys on
+    # its own once the edge is gone.
     bankroll = cycle_state["bankroll_dollars"]
     if bankroll is None:
         # Real balance query failed this cycle (see the main loop) -- skip
@@ -1218,22 +1235,55 @@ async def evaluate_and_maybe_trade(
 
     market_fills = cycle_state.setdefault("market_fills", {})
     already_filled_this_market = market_fills.get(market.ticker, 0.0)
+
+    # Per-market Kelly cap (2026-09-04, replaces the flat MAX_CONTRACTS_PER_MARKET
+    # ceiling below as the primary per-market limit). _size_for_edge already
+    # applies its own fresh Kelly cap to every individual tranche, but that cap
+    # is computed against whatever bankroll happens to be left *at that
+    # moment* -- correct for sizing one tranche in isolation, but repeated
+    # full-Kelly tranches against a shrinking-but-still-large bankroll
+    # compound past what a single Kelly calculation on the whole opportunity
+    # would allow, since they're the same directional bet, not independent
+    # ones. 2026-09-04 KXETH15M-26SEP041100-00: four tranches (58+25+12+4=99
+    # contracts), each individually Kelly-justified against the bankroll left
+    # at its own moment, stacked into a position that then couldn't be
+    # exited when the model flipped at 8s left. Computed once per market
+    # (first look this cycle) off the bankroll and price available then, and
+    # held fixed for every later tranche -- same pattern as entry_z/entry_spot
+    # in _check_exit_conditions being captured once rather than redrawn each
+    # tick. MAX_CONTRACTS_PER_MARKET stays in the min() below as an absolute
+    # outer backstop against a bad probability estimate blowing the Kelly
+    # number itself up unreasonably.
+    market_kelly_caps = cycle_state.setdefault("market_kelly_caps", {})
+    kelly_cap = market_kelly_caps.get(market.ticker)
+    if kelly_cap is None:
+        kelly_cap = _kelly_contracts(
+            _kelly_probability(effective_probability, top_of_book.avg_price),
+            top_of_book.avg_price, bankroll, config.KELLY_FRACTION,
+        )
+        market_kelly_caps[market.ticker] = kelly_cap
+
     # MAX_SIZE_MODE's whole point is to discover how much the book/cash
-    # actually support, so it isn't clipped to MAX_CONTRACTS_PER_MARKET (that
-    # ceiling exists to backstop Kelly/edge sizing against a bad probability
-    # estimate -- irrelevant here, since this mode already sizes off real
-    # depth/cash with no edge check) OR to MAX_CYCLE_CONTRACTS (2026-08-25,
-    # confirmed live: with the per-market ceiling fixed, fills just started
-    # landing on the cycle-wide ceiling instead -- same round-number symptom,
-    # different knob. Verified by temporarily raising MAX_CYCLE_CONTRACTS to
-    # 100 against a <100 account balance and watching a fill land at the real
-    # cash-bound size instead of 100). The only backstops left in this mode
-    # are real book depth and actual bankroll_dollars, both enforced inside
-    # _size_for_max_available itself. See config.MAX_SIZE_MODE's docstring.
+    # actually support, so it isn't clipped to MAX_CONTRACTS_PER_MARKET/the
+    # Kelly cap above (those exist to backstop Kelly/edge sizing against a
+    # bad probability estimate -- irrelevant here, since this mode already
+    # sizes off real depth/cash with no edge check) OR to MAX_CYCLE_CONTRACTS
+    # (2026-08-25, confirmed live: with the per-market ceiling fixed, fills
+    # just started landing on the cycle-wide ceiling instead -- same
+    # round-number symptom, different knob. Verified by temporarily raising
+    # MAX_CYCLE_CONTRACTS to 100 against a <100 account balance and watching
+    # a fill land at the real cash-bound size instead of 100). The only
+    # backstops left in this mode are real book depth and actual
+    # bankroll_dollars, both enforced inside _size_for_max_available itself.
+    # See config.MAX_SIZE_MODE's docstring.
     if config.MAX_SIZE_MODE:
         max_contracts = float("inf")
     else:
-        max_contracts = min(config.MAX_CONTRACTS_PER_MARKET - already_filled_this_market, remaining_budget)
+        max_contracts = min(
+            config.MAX_CONTRACTS_PER_MARKET - already_filled_this_market,
+            kelly_cap - already_filled_this_market,
+            remaining_budget,
+        )
     if max_contracts < 1:
         logger.debug(
             "cycle/market ceiling leaves room for <1 contract for %s (already_filled=%.2f), skipping",
