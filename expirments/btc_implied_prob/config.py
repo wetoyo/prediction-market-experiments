@@ -23,6 +23,27 @@ def _float_env(name: str, default: float) -> float:
 # Master safety switch. Must be explicitly set to false to place real orders.
 DRY_RUN = _bool_env("BTC_IMPLIED_PROB_DRY_RUN", True)
 
+# Tags this process's rows in the shared kalshi_state order_log -- has no
+# effect on trading. See ../../prediction_market_scraper/Clients/Kalshi/README.md.
+EXPERIMENT_NAME = "btc_implied_prob"
+
+# What fraction of the REAL Kalshi account balance this experiment's Kelly
+# sizing (get_balance_dollars, via order_manager.OrderManager) is allowed to
+# treat as its own bankroll. Only matters once more than one experiment is
+# trading this account live at the same time -- at 1.0 (the default) each
+# experiment independently sizes as if it alone owns the full balance, and
+# the combined intended stake across experiments can run past what any one's
+# own KELLY_FRACTION was tuned to risk. Set below 1.0 to partition the
+# account instead. See ../../prediction_market_scraper/Clients/Kalshi/README.md's
+# "Capital allocation"
+# section before changing this on the live system.
+CAPITAL_FRACTION = _float_env("BTC_IMPLIED_PROB_CAPITAL_FRACTION", 1.0)
+
+# Optional hard dollar ceiling on top of CAPITAL_FRACTION -- unset (None) by
+# default. Whichever of the two produces the smaller number wins.
+_capital_cap_dollars_env = os.environ.get("BTC_IMPLIED_PROB_CAPITAL_CAP_DOLLARS")
+CAPITAL_CAP_DOLLARS = float(_capital_cap_dollars_env) if _capital_cap_dollars_env else None
+
 # Which Kalshi BTC series (by `frequency`) to scan. Confirmed live 2026-08-12:
 # KXBTCD reports frequency="hourly" (60s settlement-average window), KXBTC15M
 # reports "fifteen_min". Range-type markets (strike_type == "between") are out
