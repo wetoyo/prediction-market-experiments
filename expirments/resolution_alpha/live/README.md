@@ -96,6 +96,39 @@ for o in client.get_orders(status='resting')['orders']:
 
 **What this doesn't do:** `buy_favored_side` places a *marketable* limit order (priced at the walked-book fill price), so in practice most orders fill immediately rather than resting — confirmed live on 2026-08-06 (see Known gaps), where a test order meant to be non-marketable filled instantly instead. By the time you notice something's wrong, there's often nothing left resting to cancel. There's no "undo" for an already-filled order — the only way out of an unwanted position is placing an offsetting order (sell what you hold), and Kalshi may or may not have a counterparty for that at a given moment. Treat killing the process as the primary safeguard, not order cancellation.
 
+## Rollback: reverting to the pre-kalshi_state fallback branch
+
+**Context:** on 2026-09-04, `order_manager.py`/`config.py` were routed through a new shared `KalshiStateManager` (commit `6598821` -- cross-process request throttling + optional capital allocation, see `../../prediction_market_scraper/Clients/Kalshi/README.md`) in the same evening as an unrelated per-market Kelly-cap sizing fix (`55ff1c9` -> `6a01b71`, see Known gaps below). Branch `resolution-alpha-no-kalshi-state` (pushed to `origin`) isolates the two: it keeps the Kelly-cap fix in `runner.py` but reverts `order_manager.py`/`config.py`/`live/.env.example` to their pre-kalshi_state state (bare `KalshiTradingClient`, no cross-process throttle/balance cache/capital allocation). Reach for it if the kalshi_state routing is ever suspected as a cause of something going wrong live (e.g. it's one of the open leads on the zero-fill handoff below) and you want to rule it out live without also losing the Kelly-cap fix. Scoped to `resolution_alpha` only -- doesn't touch `btc_implied_prob`/`golf_field_alpha`'s kalshi_state wiring or the `prediction_market_scraper` submodule pointer.
+
+To roll back on the Pi:
+
+```bash
+ssh wetoyo@100.109.148.56
+cd /home/wetoyo/prediction-market-experiments
+git status                                # check for local uncommitted work first -- do NOT skip this
+git fetch origin
+git checkout resolution-alpha-no-kalshi-state
+git log --oneline -3                      # confirm you're actually on it (0b9d4ba at the tip as of 2026-09-04)
+cd expirments/resolution_alpha
+../../.venv/bin/python -m py_compile runner.py order_manager.py config.py && echo COMPILE_OK
+../../.venv/bin/python -m pytest tests -q
+sudo systemctl restart resolution-alpha.service
+sudo systemctl status resolution-alpha.service --no-pager
+```
+
+Known local diffs on the Pi that this checkout will **not** touch (pre-existing, unrelated -- don't mistake them for something the rollback broke): `live/arm_killswitch.sh`'s executable-bit change, and the various `*.bak.*` files under `expirments/resolution_alpha/` and `prediction_market_scraper/Clients/Kalshi/` left over from manual deploys that evening -- both untracked or mode-only, `git checkout <branch>` doesn't touch either.
+
+**To come back to `main` once you're done troubleshooting:**
+
+```bash
+git checkout main
+cd expirments/resolution_alpha
+../../.venv/bin/python -m py_compile runner.py && ../../.venv/bin/python -m pytest tests -q
+sudo systemctl restart resolution-alpha.service
+```
+
+Either direction, `systemctl restart` is the only step that actually flips live trading over -- checking out a branch just changes what's on disk, which is safe on its own and doesn't affect an already-running process (see the caution note in `pi-ssh`/agent memory about this box). Back up any file you're about to hand-edit (`cp file file.bak.$(date +%Y%m%d_%H%M%S)`) before touching it directly instead of through git, same as always on this box.
+
 ## Known gaps / things to fix before trusting this with money
 
 - **~~Would re-buy the same market on every poll tick for its whole entry window~~ — found live, fixed.** `evaluate_and_maybe_trade` had no per-market "already traded" tracking, only a global `MAX_CYCLE_CONTRACTS` budget across the whole 15-minute bucket. Observed live on 2026-08-05: `KXXRP15M-26AUG052000-00` cleared the edge threshold on 9 consecutive ~2.5s ticks as its book thinned into close (fill price fell from 0.86 to 0.44 as the model's confidence rose toward 1.0 -- a real, sharp illiquidity effect matching the strategy's core thesis, not bad data), and `runner.py` logged a `[DRY RUN] would BUY 10 NO` on every single one of those ticks. With real money this would have meant 9x+ oversizing one position instead of the intended one-shot `TARGET_CONTRACTS`. Fixed by tracking a per-cycle `tickers_traded` set and skipping any market already bought this cycle -- **this is exactly the kind of bug dry-run exists to catch**, and it would not have been visible from the backtest (which only checks probability calibration, not repeated-evaluation behavior) or from a short smoke test that doesn't sit inside one market's live entry window long enough to see it repeat.
