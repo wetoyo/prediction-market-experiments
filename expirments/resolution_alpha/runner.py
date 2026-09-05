@@ -715,15 +715,17 @@ def _diagnostic_skip_reasons(
     # its caller) but 0.0 keeps its skip-reason accounting meaningful instead
     # of throwing.
     bankroll = cycle_state.get("bankroll_dollars") or 0.0
-    # Mirrors the real gate's per-market Kelly cap (2026-09-04) -- read-only:
-    # never writes cycle_state["market_kelly_caps"], since whether this
-    # diagnostic pass even runs depends on unrelated sampling config, and it
-    # must never be able to change what the real path computes (see this
-    # function's docstring). Falls back to computing its own estimate when
-    # the real path hasn't cached one yet this cycle.
+    # Mirrors the real gate's per-market Kelly cap (2026-09-04, fixed to only
+    # freeze once a fill exists -- see evaluate_and_maybe_trade's own comment)
+    # -- read-only: never writes cycle_state["market_kelly_caps"], since
+    # whether this diagnostic pass even runs depends on unrelated sampling
+    # config, and it must never be able to change what the real path computes
+    # (see this function's docstring). Falls back to computing its own
+    # estimate when the real path hasn't cached one yet this cycle.
     market_kelly_caps = cycle_state.get("market_kelly_caps", {})
-    kelly_cap = market_kelly_caps.get(market.ticker)
-    if kelly_cap is None:
+    if already_filled_this_market > 0 and market.ticker in market_kelly_caps:
+        kelly_cap = market_kelly_caps[market.ticker]
+    else:
         kelly_cap = _kelly_contracts(
             _kelly_probability(effective_probability, top_of_book.avg_price),
             top_of_book.avg_price, bankroll, config.KELLY_FRACTION,
@@ -1247,21 +1249,32 @@ async def evaluate_and_maybe_trade(
     # ones. 2026-09-04 KXETH15M-26SEP041100-00: four tranches (58+25+12+4=99
     # contracts), each individually Kelly-justified against the bankroll left
     # at its own moment, stacked into a position that then couldn't be
-    # exited when the model flipped at 8s left. Computed once per market
-    # (first look this cycle) off the bankroll and price available then, and
-    # held fixed for every later tranche -- same pattern as entry_z/entry_spot
-    # in _check_exit_conditions being captured once rather than redrawn each
-    # tick. MAX_CONTRACTS_PER_MARKET stays in the min() below as an absolute
-    # outer backstop against a bad probability estimate blowing the Kelly
-    # number itself up unreasonably.
+    # exited when the model flipped at 8s left.
+    #
+    # Only freeze the cap once a tranche has actually FILLED (already_filled >
+    # 0), not on the first look at the market -- same "only once already held"
+    # gating as the MIN_STACK_ENTRY_SECONDS_LEFT floor below. Freezing on first
+    # look regardless of fill status was a real live bug (caught 2026-09-04,
+    # same evening): a market's first tick in its entry window can catch a
+    # thin edge (price just barely past MIN_MARKET_IMPLIED_PROBABILITY), which
+    # locks in a tiny/zero kelly_cap -- and since already_filled stays 0 until
+    # a real fill happens, every later tick (even as price/edge improve toward
+    # close, or after an IOC order that zero-filled) kept re-reading that same
+    # stale near-zero cap and skipping via ceiling_lt1, permanently blocking
+    # the market for the rest of its window despite a real, growing edge.
+    # Recomputing fresh here on every no-fill-yet tick costs nothing extra
+    # (_kelly_contracts is cheap) and matches pre-fix behavior for a first
+    # entry; the cap only locks once there's an actual position to protect
+    # from compounding, at the exact number that justified that first fill
+    # (recorded below, alongside market_fills, once filled_size is known).
     market_kelly_caps = cycle_state.setdefault("market_kelly_caps", {})
-    kelly_cap = market_kelly_caps.get(market.ticker)
-    if kelly_cap is None:
+    if already_filled_this_market > 0:
+        kelly_cap = market_kelly_caps[market.ticker]
+    else:
         kelly_cap = _kelly_contracts(
             _kelly_probability(effective_probability, top_of_book.avg_price),
             top_of_book.avg_price, bankroll, config.KELLY_FRACTION,
         )
-        market_kelly_caps[market.ticker] = kelly_cap
 
     # MAX_SIZE_MODE's whole point is to discover how much the book/cash
     # actually support, so it isn't clipped to MAX_CONTRACTS_PER_MARKET/the
@@ -1452,6 +1465,9 @@ async def evaluate_and_maybe_trade(
     stats["traded"] += 1
     _finalize_sample(sample_id, traded=True, skip_reason=None)
     market_fills[market.ticker] = already_filled_this_market + filled_size
+    # Lock the Kelly cap in now that a real fill exists -- see the cap's own
+    # comment above for why this can't happen before a fill is confirmed.
+    market_kelly_caps.setdefault(market.ticker, kelly_cap)
     cost = filled_avg_price * filled_size + fee
     cycle_state["bankroll_dollars"] = bankroll - cost
     cycle_state["contracts_committed"] = already_committed + filled_size
