@@ -19,6 +19,11 @@ def _float_env(name: str, default: float) -> float:
     return float(val) if val is not None else default
 
 
+def _str_env(name: str, default: str) -> str:
+    val = os.environ.get(name)
+    return val.strip() if val is not None and val.strip() else default
+
+
 def _set_env(name: str, default: tuple[str, ...]) -> frozenset:
     val = os.environ.get(name)
     if val is None:
@@ -158,6 +163,19 @@ MIN_STACK_ENTRY_SECONDS_LEFT = _float_env("RESOLUTION_ALPHA_MIN_STACK_ENTRY_SECO
 ORDERBOOK_SUBSCRIBE_LOOKAHEAD_SECONDS = _float_env(
     "RESOLUTION_ALPHA_ORDERBOOK_SUBSCRIBE_LOOKAHEAD_SECONDS", ENTRY_WINDOW_SECONDS + 60
 )
+
+# ws order-book staleness handling at trade-decision time (added 2026-09-06).
+# When the ws book feeding a candidate is older than MAX_ORDERBOOK_AGE_SECONDS
+# (seconds since its last snapshot/delta -- ws_feed.get_orderbook_age), the
+# runner acts per ORDERBOOK_AGE_ACTION:
+#   "shadow" -- log a "[stale-book]" WARNING and nothing else (default)
+#   "rest"   -- also discard the stale ws book for this one evaluation and
+#               re-fetch it over REST (authoritative, ~1 RTT slower)
+# There is deliberately NO "skip" action: a stale book must never silently
+# cost a fill. Default MAX_ORDERBOOK_AGE_SECONDS is +inf -> the whole check
+# is a no-op until a measured age distribution justifies a real threshold.
+MAX_ORDERBOOK_AGE_SECONDS = _float_env("RESOLUTION_ALPHA_MAX_ORDERBOOK_AGE_SECONDS", float("inf"))
+ORDERBOOK_AGE_ACTION = _str_env("RESOLUTION_ALPHA_ORDERBOOK_AGE_ACTION", "shadow")
 
 # Minimum model-implied probability on the favored side to consider trading.
 MIN_FAVORED_PROBABILITY = _float_env("RESOLUTION_ALPHA_MIN_PROB", 0.97)
@@ -503,6 +521,20 @@ MAX_TRUSTED_EDGE_PROB = _float_env("RESOLUTION_ALPHA_MAX_TRUSTED_EDGE_PROB", 0.0
 # credentials configured (no account balance to query against). Has no effect
 # once DRY_RUN=false -- real balance is fetched from the account instead.
 DRY_RUN_SIMULATED_BALANCE_DOLLARS = _float_env("RESOLUTION_ALPHA_DRY_RUN_BALANCE", 1000.0)
+
+# How often to re-query the real account balance that feeds Kelly sizing
+# (evaluate_and_maybe_trade / _kelly_contracts), in seconds. Deliberately
+# decoupled from the 15-minute cycle_state bucket: the balance used to be
+# snapshotted once per bucket and then only ever decremented locally per
+# fill, so across a busy window it ratcheted monotonically toward zero and
+# never saw settlement credits return -- the 2nd/3rd/4th entry in a window
+# sized off almost nothing (2026-09-06: 5-contract fills where Kelly on
+# the real balance wanted 25+). The per-fill local decrement still runs
+# between refreshes, so a burst of fills in one pass still can't
+# over-commit against a balance the exchange API has not caught up to
+# yet. ~4 calls/min at the default; settlement-credit lag of <=15s on
+# 15-minute markets is immaterial. No effect in dry-run.
+BANKROLL_REFRESH_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_BANKROLL_REFRESH_INTERVAL_SECONDS", 15.0)
 
 # How often to re-evaluate active markets and poll spot prices, in seconds.
 POLL_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_POLL_INTERVAL_SECONDS", 2.0)

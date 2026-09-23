@@ -6,3 +6,11 @@ requests
 # kalshi_gateway.KalshiTradingClient -> live_execution.py -> live_datastream.py.
 websockets
 cryptography
+
+# Optional performance extras (2026-09-06). runner.py / ws_feed.py fall back
+# to stdlib asyncio + json when these are absent, so they are not hard
+# requirements -- but on the Pi 3 the loop is CPU-bound on ws message
+# processing and both help materially. uvloop: faster event loop.
+# orjson: faster JSON decode.
+uvloop
+orjson

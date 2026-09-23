@@ -45,6 +45,11 @@ import logging
 import time
 from collections import deque
 
+try:
+    from orjson import loads as _loads  # optional: faster JSON decode for the ws feed
+except ModuleNotFoundError:
+    from json import loads as _loads
+
 from config import SPOT_HISTORY_SECONDS
 from kalshi_gateway import WS_URL, _auth_headers, _load_private_key
 import os
@@ -61,6 +66,11 @@ INDEX_ID_BY_UNDERLYING = {
 
 _RECONNECT_BACKOFF_INITIAL = 1.0
 _RECONNECT_BACKOFF_MAX = 30.0
+# Minimum spacing between orderbook_delta resyncs (seq-gap recovery). A
+# connection that keeps gapping would otherwise pull a fresh full set of
+# snapshots every few seconds; below this interval we log and leave the
+# harder action (a full reconnect) to the disconnect path.
+_RESYNC_COOLDOWN_SECONDS = 20.0
 
 
 class KalshiWebsocketFeed:
@@ -72,6 +82,11 @@ class KalshiWebsocketFeed:
 
     def __init__(self):
         self._books: dict[str, dict[str, dict[float, float]]] = {}
+        # ticker -> time.monotonic() when its book last had a snapshot or
+        # delta applied. Lets the runner tell a fresh book from one that
+        # silently went stale with no disconnect -- see get_orderbook_age
+        # and config.MAX_ORDERBOOK_AGE_SECONDS.
+        self._book_updated_at: dict[str, float] = {}
         self._index_history: dict[str, deque] = {
             index_id: deque() for index_id in INDEX_ID_BY_UNDERLYING.values()
         }
@@ -79,6 +94,15 @@ class KalshiWebsocketFeed:
         self._subscribed_tickers: set[str] = set()
         self._orderbook_sid: int | None = None
         self._orderbook_subscribe_sent = False
+        # orderbook_delta sequence tracking. Kalshi tags every message on
+        # the subscription with a `seq` that increments by exactly 1; a
+        # jump means we silently missed a delta and some book is now wrong
+        # with no disconnect to trigger recovery (root cause of the
+        # 2026-09-06 stale-book fill). seq is per-subscription, not per
+        # market, so a gap forces a re-subscribe of every tracked ticker.
+        self._last_orderbook_seq: int | None = None
+        self._resync_requested = False
+        self._last_resync_at = 0.0
         self._connected = False
         self._credentials_missing = False
         self._next_cmd_id = 1
@@ -97,6 +121,15 @@ class KalshiWebsocketFeed:
             "yes_dollars": [[price, qty] for price, qty in sorted(book["yes"].items())],
             "no_dollars": [[price, qty] for price, qty in sorted(book["no"].items())],
         }
+
+    def get_orderbook_age(self, ticker: str) -> float | None:
+        """Seconds since this ticker's book last had a snapshot or delta
+        applied (monotonic clock), or None if it was never populated. Used
+        by the runner to spot a book that went stale with no disconnect --
+        see config.MAX_ORDERBOOK_AGE_SECONDS.
+        """
+        ts = self._book_updated_at.get(ticker)
+        return None if ts is None else time.monotonic() - ts
 
     def index_id_for(self, underlying: str) -> str | None:
         return INDEX_ID_BY_UNDERLYING.get(underlying)
@@ -153,15 +186,23 @@ class KalshiWebsocketFeed:
                 logger.exception("websocket feed disconnected, reconnecting in %.0fs", backoff)
             self._connected = False
             self._books.clear()
+            self._book_updated_at.clear()
             self._subscribed_tickers.clear()
             self._orderbook_sid = None
+            self._last_orderbook_seq = None
+            self._resync_requested = False
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, _RECONNECT_BACKOFF_MAX)
             continue
 
     async def _connect_and_listen(self, api_key_id, private_key) -> None:
         headers = _auth_headers(api_key_id, private_key)
-        async with websockets.connect(WS_URL, additional_headers=headers) as ws:
+        # compression=None: skip permessage-deflate. Every inbound frame
+        # would otherwise be inflated on this CPU-bound Pi 3; the payloads
+        # are small JSON and downstream bandwidth is not the constraint.
+        async with websockets.connect(
+            WS_URL, additional_headers=headers, compression=None
+        ) as ws:
             self._ws = ws
             self._connected = True
             logger.info("websocket connected")
@@ -177,7 +218,7 @@ class KalshiWebsocketFeed:
             sync_task = asyncio.create_task(self._subscription_sync_loop(ws))
             try:
                 async for raw in ws:
-                    self._handle_message(json.loads(raw))
+                    self._handle_message(_loads(raw))
             finally:
                 sync_task.cancel()
 
@@ -199,6 +240,31 @@ class KalshiWebsocketFeed:
                 await asyncio.sleep(2.0)
                 continue
 
+            if self._resync_requested:
+                self._resync_requested = False
+                elapsed = time.monotonic() - self._last_resync_at
+                if elapsed < _RESYNC_COOLDOWN_SECONDS:
+                    logger.warning(
+                        "orderbook resync suppressed (previous was %.0fs ago, < %.0fs cooldown) -- "
+                        "if seq gaps persist the reconnect path will clear it",
+                        elapsed, _RESYNC_COOLDOWN_SECONDS,
+                    )
+                elif self._subscribed_tickers:
+                    resync = sorted(self._subscribed_tickers)
+                    logger.warning(
+                        "orderbook resync: re-subscribing %d ticker(s) for fresh snapshots after a seq gap",
+                        len(resync),
+                    )
+                    await self._send(ws, "update_subscription", {
+                        "sid": self._orderbook_sid, "action": "delete_markets", "market_tickers": resync,
+                    })
+                    self._subscribed_tickers.clear()
+                    self._books.clear()
+                    self._book_updated_at.clear()
+                    self._last_orderbook_seq = None
+                    self._last_resync_at = time.monotonic()
+                    # fall through: the add-markets diff below re-adds _desired_tickers
+
             to_add = self._desired_tickers - self._subscribed_tickers
             to_delete = self._subscribed_tickers - self._desired_tickers
             if to_add:
@@ -213,6 +279,7 @@ class KalshiWebsocketFeed:
                 self._subscribed_tickers -= to_delete
                 for ticker in to_delete:
                     self._books.pop(ticker, None)
+                    self._book_updated_at.pop(ticker, None)
 
             # Without this, an empty diff (the steady-state common case) loops
             # with no `await` inside the body -- a synchronous busy-spin that
@@ -236,15 +303,36 @@ class KalshiWebsocketFeed:
             sid = message.get("msg", {}).get("sid")
             if channel == "orderbook_delta":
                 self._orderbook_sid = sid
+                self._last_orderbook_seq = None  # fresh sid -- next snapshot re-baselines
             logger.info("subscribed: channel=%s sid=%s", channel, sid)
         elif msg_type == "orderbook_snapshot":
+            self._track_orderbook_seq(message.get("seq"))
             self._apply_orderbook_snapshot(message.get("msg", {}))
         elif msg_type == "orderbook_delta":
+            self._track_orderbook_seq(message.get("seq"))
             self._apply_orderbook_delta(message.get("msg", {}))
         elif msg_type == "cfbenchmarks_value":
             self._apply_cfbenchmarks_value(message.get("msg", {}))
         elif msg_type == "error":
             logger.warning("websocket error message: %s", message.get("msg"))
+
+    def _track_orderbook_seq(self, seq) -> None:
+        """Flag a resync when the orderbook_delta subscription's `seq`
+        skips a value -- one or more delta messages were lost and some
+        book no longer matches Kalshi's. seq is per-subscription (not
+        per market), so a gap can't be pinned to one ticker; the resync
+        in _subscription_sync_loop re-subscribes them all.
+        """
+        if not isinstance(seq, int):
+            return
+        if self._last_orderbook_seq is not None and seq > self._last_orderbook_seq + 1:
+            logger.warning(
+                "orderbook_delta seq gap: expected %d, got %d (%d message(s) lost) -- requesting resync",
+                self._last_orderbook_seq + 1, seq, seq - self._last_orderbook_seq - 1,
+            )
+            self._resync_requested = True
+        if self._last_orderbook_seq is None or seq > self._last_orderbook_seq:
+            self._last_orderbook_seq = seq
 
     def _apply_orderbook_snapshot(self, msg: dict) -> None:
         ticker = msg.get("market_ticker")
@@ -253,6 +341,7 @@ class KalshiWebsocketFeed:
         yes_levels = {float(p): float(q) for p, q in msg.get("yes_dollars_fp", [])}
         no_levels = {float(p): float(q) for p, q in msg.get("no_dollars_fp", [])}
         self._books[ticker] = {"yes": yes_levels, "no": no_levels}
+        self._book_updated_at[ticker] = time.monotonic()
         self._subscribed_tickers.add(ticker)
 
     def _apply_orderbook_delta(self, msg: dict) -> None:
@@ -272,13 +361,14 @@ class KalshiWebsocketFeed:
             levels.pop(price, None)
         else:
             levels[price] = new_qty
+        self._book_updated_at[ticker] = time.monotonic()
 
     def _apply_cfbenchmarks_value(self, msg: dict) -> None:
         index_id = msg.get("index_id")
         if index_id not in self._index_history:
             return
         try:
-            raw = json.loads(msg["data"])
+            raw = _loads(msg["data"])
             value = float(raw["value"])
             ts_ms = float(raw.get("time", msg.get("received_at")))
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):

@@ -81,11 +81,17 @@ or placing orders. Off by default.
 """
 
 import asyncio
+import gc
 import logging
 import math
 import sys
 import time
 from datetime import datetime, timezone
+
+try:
+    import uvloop  # optional: drop-in faster event loop; stdlib asyncio is the fallback
+except ModuleNotFoundError:
+    uvloop = None
 
 import config
 import sampling
@@ -200,6 +206,58 @@ def _kelly_contracts(favored_probability: float, price: float, bankroll_dollars:
     full_kelly_fraction_of_bankroll = edge_prob / (1.0 - price)
     stake_dollars = kelly_fraction * full_kelly_fraction_of_bankroll * bankroll_dollars
     return stake_dollars / price
+
+
+def _kelly_group_key(market: ActiveMarket) -> tuple:
+    """Groups markets that settle off the same underlying at the same instant
+    -- e.g. a KXBTC15M market and a KXBTCD (hourly) market both closing at
+    the top of the hour. Both resolve off one shared settlement value, so
+    they're the same directional risk, not two independent ones, whenever
+    their windows line up like this (interval_minutes doesn't need to match:
+    a 15m/30m/60m market all closing at the same instant belong to one group).
+    """
+    return (market.underlying, market.close_time)
+
+
+def _group_kelly_cap_contracts(
+    already_filled_this_market: float,
+    price: float,
+    solo_kelly_cap_contracts: float,
+    frozen_group_cap_dollars: float | None,
+    group_committed_dollars: float,
+) -> float:
+    """Kelly ceiling (in contracts, same units/shape as the old per-ticker
+    market_kelly_caps entry -- caller still does `kelly_cap -
+    already_filled_this_market`) for a market that may share its settlement
+    moment with a sibling interval market (see _kelly_group_key).
+
+    2026-09-11 incident: the 15m and 1hr BTC markets both entered at 8pm
+    (same close_time) and each independently sized a full-Kelly stake off the
+    same bankroll, compounding past what one Kelly calculation for that
+    single correlated opportunity would allow -- the combined loss exceeded
+    what KELLY_FRACTION was meant to cap. Same root cause as the per-market
+    stacking fix above (repeated tranches of the *same* ticker sized
+    independently against a shrinking bankroll), just across tickers that
+    happen to settle at the same instant instead of within one ticker.
+
+    Before any ticker in the group has filled this cycle, `frozen_group_cap_dollars`
+    is None and this recomputes a fresh solo cap every tick, exactly like the
+    old per-ticker behavior (see evaluate_and_maybe_trade's own comment on why
+    freezing before a fill is a bug). Once any ticker in the group fills, the
+    group's dollar budget is frozen (at whichever ticker filled first --
+    evaluate_and_maybe_trade evaluates markets longest-interval-first each
+    tick specifically so the 1-hour leg gets first claim on it when both are
+    eligible in the same tick) and every ticker in the group -- including
+    itself -- draws down that SAME shared dollar budget from then on,
+    converted to contracts at its own current price.
+    """
+    cap_dollars = (
+        frozen_group_cap_dollars if frozen_group_cap_dollars is not None else solo_kelly_cap_contracts * price
+    )
+    remaining_dollars = max(0.0, cap_dollars - group_committed_dollars)
+    if price <= 0.0:
+        return already_filled_this_market
+    return already_filled_this_market + remaining_dollars / price
 
 
 def _kelly_probability(effective_probability: float, market_price: float) -> float:
@@ -390,16 +448,27 @@ def _reconcile_fill(
 
     dry-run: no real match happened, so the simulated walk stands in.
     live: take the actually-filled *quantity* from `fill_count` (the field that
-    varies with a partial fill). Take the price from `average_fill_price`, but
-    convert it to favored-side terms first -- it is always quoted in YES
-    dollars, so for a NO buy the favored-side price is `1 - average_fill_price`
-    -- and fall back to the simulated avg_price if the response omits it or the
-    converted value lands implausibly far from the simulation. That guard is
-    not paranoia: `cost = avg_price * filled_size`, and under MAX_SIZE_MODE the
-    next tick's size is computed off the resulting bankroll, so a mis-scaled
-    price (e.g. a NO fill booked at its ~0.03 YES price instead of its ~0.97
-    real cost) barely decrements bankroll and the loop immediately fires
-    another full-size order. Seen live 2026-08-28.
+    varies with a partial fill). Take the price from `average_fill_price`,
+    converted to favored-side terms first -- it is always quoted in YES
+    dollars, so for a NO buy the favored-side price is `1 - average_fill_price`.
+    That converted price is what Kalshi actually matched, so it is
+    authoritative for cost/bankroll/edge accounting and is booked whenever it
+    is a valid probability (0 < p < 1). Only fall back to the simulated
+    avg_price when the response omits the price outright or it converts to a
+    non-probability -- the genuine "response is garbage" case. The scale-sanity
+    concern (`cost = avg_price * filled_size`; under MAX_SIZE_MODE the next tick
+    sizes off the resulting bankroll, so a mis-scaled ~0.03 price barely
+    decrements it and the loop re-fires -- seen live 2026-08-28) is covered by
+    that 0 < p < 1 check plus the YES->favored conversion.
+
+    A large gap between the real fill and the simulation is NOT treated as
+    "implausible" here (an earlier guard did that -- it discarded the real
+    price and kept the stale sim, e.g. 2026-09-06: a NO entry booked at the
+    walk's 0.90 when the real fill was 0.56 into a market that had moved). The
+    real price is still booked; the gap is logged loudly, because it means the
+    entry fired off a stale/thin order book and the edge recorded for that
+    trade is suspect. This function is pure post-fill accounting -- it runs
+    after buy_favored_side returns and never gates order placement.
     """
     if dry_run:
         fee = estimate_fee_dollars(simulated.avg_price, simulated.filled_size)
@@ -416,12 +485,26 @@ def _reconcile_fill(
     try:
         yes_price = float(order_response["average_fill_price"])  # always YES-denominated
         favored_price = yes_price if favored_side == "yes" else round(1.0 - yes_price, 4)
-        if 0.0 < favored_price < 1.0 and abs(favored_price - simulated.avg_price) <= 0.05:
+        if 0.0 < favored_price < 1.0:
+            # Kalshi's actually-matched price is authoritative for what we paid
+            # -- always book it. Falling back to the walk's simulated price
+            # here (the old behaviour when the two diverged by > 0.05) booked
+            # a fiction: on 2026-09-06 a NO entry went in at the sim's 0.90
+            # while the real fill was 0.56, because the ws book the walk read
+            # was stale. cost/bankroll/edge must track reality.
             avg_price = favored_price
+            divergence = abs(favored_price - simulated.avg_price)
+            if divergence > 0.05:
+                logger.warning(
+                    "reconcile: real fill %.4f (favored-side) vs simulated %.4f -- gap %.4f; "
+                    "order book was stale/thin at submit. Booking the real price; the entry edge "
+                    "logged for this trade was computed off the stale book and is unreliable.",
+                    favored_price, simulated.avg_price, divergence,
+                )
         else:
             logger.warning(
-                "reconcile: response avg_fill_price %.4f (favored-side %.4f) implausible vs simulated %.4f "
-                "-- using simulated",
+                "reconcile: response avg_fill_price %.4f -> favored-side %.4f is not a valid "
+                "probability -- falling back to simulated %.4f",
                 yes_price, favored_price, simulated.avg_price,
             )
     except (KeyError, TypeError, ValueError):
@@ -715,21 +798,25 @@ def _diagnostic_skip_reasons(
     # its caller) but 0.0 keeps its skip-reason accounting meaningful instead
     # of throwing.
     bankroll = cycle_state.get("bankroll_dollars") or 0.0
-    # Mirrors the real gate's per-market Kelly cap (2026-09-04, fixed to only
-    # freeze once a fill exists -- see evaluate_and_maybe_trade's own comment)
-    # -- read-only: never writes cycle_state["market_kelly_caps"], since
+    # Mirrors the real gate's shared-across-siblings Kelly cap (2026-09-04,
+    # fixed to only freeze once a fill exists; 2026-09-11, extended to share
+    # the frozen dollar budget across same-close_time markets like a 15m/1hr
+    # pair -- see _group_kelly_cap_contracts) -- read-only: never writes
+    # cycle_state["kelly_group_caps"]/["kelly_group_committed_dollars"], since
     # whether this diagnostic pass even runs depends on unrelated sampling
     # config, and it must never be able to change what the real path computes
     # (see this function's docstring). Falls back to computing its own
-    # estimate when the real path hasn't cached one yet this cycle.
-    market_kelly_caps = cycle_state.get("market_kelly_caps", {})
-    if already_filled_this_market > 0 and market.ticker in market_kelly_caps:
-        kelly_cap = market_kelly_caps[market.ticker]
-    else:
-        kelly_cap = _kelly_contracts(
-            _kelly_probability(effective_probability, top_of_book.avg_price),
-            top_of_book.avg_price, bankroll, config.KELLY_FRACTION,
-        )
+    # solo estimate when the real path hasn't frozen a group cap yet this cycle.
+    group_key = _kelly_group_key(market)
+    solo_kelly_cap = _kelly_contracts(
+        _kelly_probability(effective_probability, top_of_book.avg_price),
+        top_of_book.avg_price, bankroll, config.KELLY_FRACTION,
+    )
+    kelly_cap = _group_kelly_cap_contracts(
+        already_filled_this_market, top_of_book.avg_price, solo_kelly_cap,
+        cycle_state.get("kelly_group_caps", {}).get(group_key),
+        cycle_state.get("kelly_group_committed_dollars", {}).get(group_key, 0.0),
+    )
     max_contracts = min(
         config.MAX_CONTRACTS_PER_MARKET - already_filled_this_market,
         kelly_cap - already_filled_this_market,
@@ -1096,6 +1183,34 @@ async def evaluate_and_maybe_trade(
             _record_skip_sample("orderbook_failed")
             return
 
+    # ws order-book staleness check (added 2026-09-06). Never skips a trade
+    # -- at most it swaps a stale ws book for a fresh REST one for this eval.
+    # No-op under default config (MAX_ORDERBOOK_AGE_SECONDS == inf).
+    if orderbook_source == "ws" and config.MAX_ORDERBOOK_AGE_SECONDS != float("inf"):
+        _book_age = ws_feed.get_orderbook_age(market.ticker)
+        if _book_age is not None and _book_age > config.MAX_ORDERBOOK_AGE_SECONDS:
+            if config.ORDERBOOK_AGE_ACTION == "rest":
+                from kalshi_gateway import fetch_orderbook
+                try:
+                    orderbook_fp = await asyncio.to_thread(fetch_orderbook, market.ticker)
+                    orderbook_source = "rest_stale_ws"
+                    logger.warning(
+                        "%s ws book was %.1fs stale (> %.1fs MAX_ORDERBOOK_AGE_SECONDS) -- "
+                        "re-fetched over REST for this evaluation",
+                        market.ticker, _book_age, config.MAX_ORDERBOOK_AGE_SECONDS,
+                    )
+                except Exception:
+                    logger.warning(
+                        "%s ws book %.1fs stale and REST re-fetch failed -- evaluating on the ws book",
+                        market.ticker, _book_age,
+                    )
+            else:  # "shadow" or any unrecognized value: log only, change nothing
+                logger.warning(
+                    "%s [stale-book] ws book is %.1fs old (> %.1fs MAX_ORDERBOOK_AGE_SECONDS); "
+                    "evaluating on it anyway (ORDERBOOK_AGE_ACTION=%s) -- any edge from this book is suspect",
+                    market.ticker, _book_age, config.MAX_ORDERBOOK_AGE_SECONDS, config.ORDERBOOK_AGE_ACTION,
+                )
+
     # Model-vs-market sanity gates (added 2026-08-06 -- see config.py's
     # MIN_MARKET_IMPLIED_PROBABILITY / MAX_TRUSTED_EDGE_PROB docstrings for the
     # live incident that prompted these). Both compare against the market's own
@@ -1187,8 +1302,8 @@ async def evaluate_and_maybe_trade(
 
     # Per-market fill tracking (replaces the old one-shot-per-market dedup,
     # 2026-08-06): a market can be bought more than once within its entry
-    # window now, as long as there's remaining capacity under its per-market
-    # ceiling (see market_kelly_caps below) and it still clears every gate at
+    # window now, as long as there's remaining capacity under its (possibly
+    # group-shared, see kelly_group_caps below) Kelly ceiling and it still clears every gate at
     # the fresh price -- per explicit user request ("continuing to buy if
     # there is available liquidity ... is good"). This does NOT reopen the
     # old repeated-buy-attempt bug (buying 9 times in under a minute as the
@@ -1267,14 +1382,28 @@ async def evaluate_and_maybe_trade(
     # entry; the cap only locks once there's an actual position to protect
     # from compounding, at the exact number that justified that first fill
     # (recorded below, alongside market_fills, once filled_size is known).
-    market_kelly_caps = cycle_state.setdefault("market_kelly_caps", {})
-    if already_filled_this_market > 0:
-        kelly_cap = market_kelly_caps[market.ticker]
-    else:
-        kelly_cap = _kelly_contracts(
-            _kelly_probability(effective_probability, top_of_book.avg_price),
-            top_of_book.avg_price, bankroll, config.KELLY_FRACTION,
-        )
+    #
+    # 2026-09-11: this cap is now shared across every ticker that settles at
+    # the same instant (see _kelly_group_key/_group_kelly_cap_contracts) --
+    # e.g. a 15m and 1hr BTC market both closing at 8pm are the same
+    # directional bet on the same underlying value, not two independent ones,
+    # so a full Kelly stake on each independently overleveraged past
+    # KELLY_FRACTION's intent (the incident that prompted this). The dollar
+    # budget freezes the same way as before (only once a fill exists
+    # somewhere in the group), just keyed by (underlying, close_time) instead
+    # of by ticker alone; a market with no same-close_time sibling behaves
+    # exactly as before (a group of one).
+    group_key = _kelly_group_key(market)
+    kelly_group_caps = cycle_state.setdefault("kelly_group_caps", {})
+    kelly_group_committed = cycle_state.setdefault("kelly_group_committed_dollars", {})
+    solo_kelly_cap = _kelly_contracts(
+        _kelly_probability(effective_probability, top_of_book.avg_price),
+        top_of_book.avg_price, bankroll, config.KELLY_FRACTION,
+    )
+    kelly_cap = _group_kelly_cap_contracts(
+        already_filled_this_market, top_of_book.avg_price, solo_kelly_cap,
+        kelly_group_caps.get(group_key), kelly_group_committed.get(group_key, 0.0),
+    )
 
     # MAX_SIZE_MODE's whole point is to discover how much the book/cash
     # actually support, so it isn't clipped to MAX_CONTRACTS_PER_MARKET/the
@@ -1465,10 +1594,15 @@ async def evaluate_and_maybe_trade(
     stats["traded"] += 1
     _finalize_sample(sample_id, traded=True, skip_reason=None)
     market_fills[market.ticker] = already_filled_this_market + filled_size
-    # Lock the Kelly cap in now that a real fill exists -- see the cap's own
-    # comment above for why this can't happen before a fill is confirmed.
-    market_kelly_caps.setdefault(market.ticker, kelly_cap)
     cost = filled_avg_price * filled_size + fee
+    # Lock the GROUP's Kelly dollar budget in now that a real fill exists --
+    # see the cap's own comment above for why this can't happen before a fill
+    # is confirmed. solo_kelly_cap here is this ticker's own (unshared) cap;
+    # setdefault means only the first fill in the group (across every ticker
+    # sharing this close_time) sets it, same "freeze once" semantics as
+    # before, just group- instead of ticker-scoped.
+    kelly_group_caps.setdefault(group_key, solo_kelly_cap * top_of_book.avg_price)
+    kelly_group_committed[group_key] = kelly_group_committed.get(group_key, 0.0) + cost
     cycle_state["bankroll_dollars"] = bankroll - cost
     cycle_state["contracts_committed"] = already_committed + filled_size
 
@@ -1520,6 +1654,7 @@ async def run_forever() -> None:
     ws_task = asyncio.create_task(ws_feed.run())
 
     last_discovery = 0.0
+    last_bankroll_refresh = 0.0
     active_markets: list[ActiveMarket] = []
     cycle_state: dict = {}
     last_cycle_key = None
@@ -1563,37 +1698,52 @@ async def run_forever() -> None:
             if key != last_cycle_key:
                 cycle_state = {}
                 last_cycle_key = key
-                # Bankroll snapshot for this cycle's Kelly sizing (see
-                # evaluate_and_maybe_trade / _kelly_contracts) -- refreshed once per
-                # 15-minute bucket rather than queried on every trade decision, and
-                # decremented locally after each fill within the bucket. A real
-                # balance query needs credentials; dry-run without them (or in
-                # general) uses the configured simulated bankroll instead.
-                #
-                # None means "couldn't determine a real bankroll this cycle" --
-                # evaluate_and_maybe_trade must skip sizing/trading entirely rather
-                # than guess (2026-08-13: this used to fall back to
-                # DRY_RUN_SIMULATED_BALANCE_DOLLARS on a failed live query, which
-                # meant Kelly sizing could size real orders against a fabricated
-                # bankroll instead of halting -- same bug caught and fixed in
-                # ../btc_implied_prob/strategy.py's _bankroll_dollars).
+                # The per-shard collateral guard's data is tied to the 15-minute
+                # cycle_state bucket: it's only a coarse "does this shard hold any
+                # collateral at all" check and $0->funded moves are manual and rare.
+                # None -> guard falls through and lets the real order attempt be the
+                # judge. The Kelly *bankroll* is refreshed on a much shorter cadence,
+                # just below -- see that block.
                 if not order_manager.dry_run:
-                    try:
-                        cycle_state["bankroll_dollars"] = await asyncio.to_thread(order_manager.get_balance_dollars)
-                    except Exception:
-                        logger.exception("failed to fetch account balance -- skipping sizing/trading this cycle")
-                        cycle_state["bankroll_dollars"] = None
-                    # Per-shard balances for this cycle's exchange-shard collateral
-                    # guard (see evaluate_and_maybe_trade). None -> guard falls
-                    # through and lets the real order attempt be the judge.
                     try:
                         cycle_state["shard_balances"] = await asyncio.to_thread(order_manager.get_shard_balances)
                     except Exception:
                         logger.exception("failed to fetch per-shard balances this cycle")
                         cycle_state["shard_balances"] = None
                     _warn_unfunded_shards(active_markets, cycle_state.get("shard_balances"))
-                else:
-                    cycle_state["bankroll_dollars"] = config.DRY_RUN_SIMULATED_BALANCE_DOLLARS
+
+            # Account balance for Kelly sizing (evaluate_and_maybe_trade /
+            # _kelly_contracts). Refreshed every BANKROLL_REFRESH_INTERVAL_SECONDS,
+            # NOT once per 15-minute cycle_state bucket like everything else in
+            # cycle_state. evaluate_and_maybe_trade still decrements this locally
+            # after each fill (cycle_state["bankroll_dollars"] -= cost), so a burst
+            # of fills within one evaluation pass can't over-commit against a
+            # balance the exchange API hasn't caught up to yet -- but on the old
+            # once-per-bucket snapshot that decrement was the ONLY thing moving the
+            # number: it ratcheted monotonically down over as much as 15 minutes
+            # and never saw settlement credits come back, so the 2nd/3rd/4th trade
+            # in a window sized off near-zero leftover bankroll (2026-09-06:
+            # 5-contract fills where Kelly on the real balance wanted 25+).
+            #
+            # None still means "couldn't determine a real bankroll" and
+            # evaluate_and_maybe_trade must skip sizing/trading rather than guess
+            # (2026-08-13: a failed live query used to fall back to
+            # DRY_RUN_SIMULATED_BALANCE_DOLLARS, sizing real orders against a
+            # fabricated bankroll -- same bug fixed in ../btc_implied_prob). The
+            # "not in cycle_state" clause repopulates immediately after a bucket
+            # reset so evaluate_and_maybe_trade never hits a missing key.
+            if order_manager.dry_run:
+                cycle_state["bankroll_dollars"] = config.DRY_RUN_SIMULATED_BALANCE_DOLLARS
+            elif (
+                "bankroll_dollars" not in cycle_state
+                or now_ts - last_bankroll_refresh >= config.BANKROLL_REFRESH_INTERVAL_SECONDS
+            ):
+                try:
+                    cycle_state["bankroll_dollars"] = await asyncio.to_thread(order_manager.get_balance_dollars)
+                except Exception:
+                    logger.exception("failed to fetch account balance -- halting sizing/trading until the next refresh")
+                    cycle_state["bankroll_dollars"] = None
+                last_bankroll_refresh = now_ts
 
             # Only ask the websocket to track order books for markets actually
             # approaching close, not every open market -- see
@@ -1602,6 +1752,7 @@ async def run_forever() -> None:
             near_close_tickers = {
                 m.ticker for m in active_markets
                 if 0 < (m.close_time - now).total_seconds() <= config.ORDERBOOK_SUBSCRIBE_LOOKAHEAD_SECONDS
+                and (config.TRADE_UNSAFE_MARKETS or m.underlying in config.TRUSTED_SETTLEMENT_UNDERLYINGS)
             }
             ws_feed.set_desired_tickers(near_close_tickers)
 
@@ -1618,7 +1769,13 @@ async def run_forever() -> None:
             # cold with only LIGHTWEIGHT_TRADING_WINDOW_SECONDS to build it up.
             # Evaluation/exit-checking themselves are phase-2-only.
             if lightweight_trading_phase:
-                for market in active_markets:
+                # Longest interval first (2026-09-11): when a 15m and 1hr
+                # market share a close_time (see _kelly_group_key), whichever
+                # is evaluated first within a tick gets first claim on their
+                # shared Kelly dollar budget -- sorting this way makes the
+                # 1-hour leg the one that takes priority, per the incident
+                # this grouping fixes (see _group_kelly_cap_contracts).
+                for market in sorted(active_markets, key=lambda m: -m.interval_minutes):
                     try:
                         await evaluate_and_maybe_trade(market, spot_feed, ws_feed, order_manager, cycle_state, stats, open_positions)
                     except Exception:
@@ -1641,4 +1798,13 @@ async def run_forever() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(run_forever())
+    # Fewer gen0 GC sweeps (process RSS is ~65 MB, the box has headroom)
+    # and lift the long-lived startup objects out of every future
+    # collection: each GC pause stalls this single-threaded loop, and a
+    # stalled loop applies ws order-book deltas late (2026-09-06 incident).
+    gc.set_threshold(50_000, 500, 1000)
+    gc.freeze()
+    if uvloop is not None:
+        uvloop.run(run_forever())
+    else:
+        asyncio.run(run_forever())
