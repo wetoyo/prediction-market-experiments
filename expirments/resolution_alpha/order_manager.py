@@ -52,10 +52,15 @@ an unfillable remainder, or, above ~0.995, rounded to 1.0000/0.0000 ->
 `invalid_price` -> the ticker blacklisted for the rest of the cycle.
 """
 
+import json
 import logging
+import os
+import time
 
+import config
 from config import DRY_RUN
 from kalshi_gateway import KalshiTradingClient
+from sim_bankroll import SimulatedBankroll
 
 logger = logging.getLogger("resolution_alpha.order_manager")
 
@@ -95,20 +100,174 @@ def _to_api_order(side: str, limit_price: float) -> tuple[str, float]:
     return ("bid" if side == "yes" else "ask"), price
 
 
+def _log_despite_lightweight_mode(level: int, msg: str, *args) -> None:
+    """Same as runner._log_despite_lightweight_mode (not imported: runner
+    imports this module) -- simulated-bankroll divergences must stay visible
+    under LIGHTWEIGHT_MODE's process-wide logging.disable."""
+    if not config.LIGHTWEIGHT_MODE:
+        logger.log(level, msg, *args)
+        return
+    logging.disable(logging.NOTSET)
+    try:
+        logger.log(level, msg, *args)
+    finally:
+        logging.disable(logging.CRITICAL)
+
+
 class OrderManager:
-    def __init__(self, dry_run: bool = DRY_RUN):
+    # Class-level fallbacks so an instance built via OrderManager.__new__
+    # (tests/test_order_manager.py's TestPlaceOrderWiring) has no ledger.
+    _sim: SimulatedBankroll | None = None
+    _balance_snapshot: tuple[float, int] | None = None
+    _checks_since_status_log = 0
+
+    def __init__(
+        self,
+        dry_run: bool = DRY_RUN,
+        allocation_dollars: float | None = config.SIM_BANKROLL_ALLOCATION_DOLLARS,
+        allocation_fraction: float = config.SIM_BANKROLL_ALLOCATION_FRACTION,
+    ):
+        """`allocation_dollars` (when > 0) or else `allocation_fraction` of the
+        real balance is this manager's slice of the account, tracked by its
+        own simulated bankroll (sim_bankroll.py). SHADOW ONLY for now:
+        get_balance_dollars still returns the real account balance and
+        nothing sizes off the simulated one -- see sync_sim_bankroll."""
         self.dry_run = dry_run
         self._client = None
         if not dry_run:
             self._client = KalshiTradingClient()
+            if config.SIM_BANKROLL_ENABLED:
+                self._sim = SimulatedBankroll(
+                    allocation_dollars, allocation_fraction, config.SIM_BANKROLL_TOLERANCE_DOLLARS,
+                )
 
     def get_balance_dollars(self) -> float:
         """Real account balance, for Kelly sizing (runner.py's
         _kelly_contracts). Only call when dry_run is False -- there's no
         client to query otherwise; runner.py uses
         config.DRY_RUN_SIMULATED_BALANCE_DOLLARS in that case instead.
+
+        Also stashes the value (with the ledger's fill counter at that
+        moment) for the next sync_sim_bankroll -- the return value is
+        unchanged by the simulated bankroll.
         """
-        return float(self._client.get_balance()["balance_dollars"])
+        balance = float(self._client.get_balance()["balance_dollars"])
+        if self._sim is not None:
+            self._balance_snapshot = (balance, self._sim.fill_seq)
+        return balance
+
+    def sync_sim_bankroll(self) -> None:
+        """Bring the simulated bankroll up to date and check it against the
+        real balance last fetched by get_balance_dollars. runner.py runs this
+        in a background thread after every successful bankroll refresh, so
+        its REST calls never sit in front of an order. Never raises.
+
+        1st call: allocate + adopt positions already open on the account.
+        After: fetch exact costs for fills booked from POST responses,
+        apply settlements for held tickers, then check. A divergence
+        confirmed on two consecutive checks is counted, logged, appended
+        to SIM_BANKROLL_DIVERGENCE_LOG_PATH and resynced to the real
+        balance. With several runners on one account this check has to
+        become a sum over all ledgers -- see live/SIM_BANKROLL_PLAN.md.
+        """
+        if self._sim is None or self._balance_snapshot is None:
+            return
+        try:
+            self._sync_sim_bankroll()
+        except Exception:
+            logger.exception("[sim-bankroll] sync failed (shadow only -- trading unaffected)")
+
+    def _sync_sim_bankroll(self) -> None:
+        sim = self._sim
+        real_balance, fill_seq_at_balance = self._balance_snapshot
+        if not sim.initialized:
+            adopted = {}
+            for row in self._client.get_positions().get("market_positions", []):
+                position = float(row.get("position_fp") or 0.0)
+                if position:
+                    adopted[row["ticker"]] = ("yes" if position > 0 else "no", abs(position))
+            cash = sim.initialize(real_balance, fill_seq_at_balance, adopted)
+            if cash is None:
+                return  # a fill raced the balance snapshot; retry on the next refresh
+            _log_despite_lightweight_mode(
+                logging.INFO,
+                "[sim-bankroll] initialized (shadow only): sim $%.4f of real $%.4f, adopted %d open position(s)",
+                cash, real_balance, len(adopted),
+            )
+            self._write_sim_status(None)
+            return
+
+        for order_id in list(sim.pending_exact):
+            try:
+                order = self._client._request("GET", f"/portfolio/orders/{order_id}")["order"]
+            except Exception:
+                logger.warning("[sim-bankroll] could not fetch exact cost for order %s, retrying next sync", order_id)
+                continue
+            sim.apply_exact_cost(order_id, order)
+
+        held = sim.open_tickers()
+        if held:
+            min_ts = int(min(held.values())) - 300
+            cursor = None
+            while True:
+                params = {"limit": 200, "min_ts": min_ts}
+                if cursor:
+                    params["cursor"] = cursor
+                page = self._client._request("GET", "/portfolio/settlements", params=params)
+                for settlement in page.get("settlements", []):
+                    if settlement.get("ticker") in held:
+                        sim.apply_settlement(settlement)
+                cursor = page.get("cursor")
+                if not cursor:
+                    break
+
+        result = sim.check(real_balance, fill_seq_at_balance)
+        if result.status == "diverged":
+            _log_despite_lightweight_mode(
+                logging.WARNING,
+                "[sim-bankroll] DIVERGED (#%d this run): sim $%.4f vs expected $%.4f (real $%.4f), gap %+.4f "
+                "-- resynced to the real balance",
+                sim.divergence_count, result.sim_cash, result.expected_cash, result.real_balance, result.gap,
+            )
+            self._append_divergence(sim.last_divergence)
+        elif result.status == "suspect":
+            logger.info(
+                "[sim-bankroll] gap %+.4f (sim $%.4f vs expected $%.4f) -- confirming on the next check",
+                result.gap, result.sim_cash, result.expected_cash,
+            )
+        self._checks_since_status_log += 1
+        if self._checks_since_status_log >= 60:  # ~15 min at the default 15s refresh
+            self._checks_since_status_log = 0
+            logger.info(
+                "[sim-bankroll] %s: sim $%.4f, real $%.4f, %d checks (%d inconclusive), %d divergence(s) this run",
+                result.status, sim.cash, real_balance, sim.checks, sim.inconclusive_checks, sim.divergence_count,
+            )
+        self._write_sim_status(result)
+
+    def _write_sim_status(self, result) -> None:
+        status = self._sim.snapshot()
+        status["updated_ts"] = time.time()
+        if result is not None:
+            status["last_check"] = {
+                "status": result.status, "reason": result.reason, "real_balance": result.real_balance,
+                "expected_cash": result.expected_cash, "gap": result.gap,
+            }
+        try:
+            os.makedirs(os.path.dirname(config.SIM_BANKROLL_STATUS_PATH), exist_ok=True)
+            tmp = config.SIM_BANKROLL_STATUS_PATH + ".tmp"
+            with open(tmp, "w") as fh:
+                json.dump(status, fh, indent=1)
+            os.replace(tmp, config.SIM_BANKROLL_STATUS_PATH)
+        except OSError:
+            logger.warning("[sim-bankroll] could not write %s", config.SIM_BANKROLL_STATUS_PATH)
+
+    def _append_divergence(self, event: dict | None) -> None:
+        try:
+            os.makedirs(os.path.dirname(config.SIM_BANKROLL_DIVERGENCE_LOG_PATH), exist_ok=True)
+            with open(config.SIM_BANKROLL_DIVERGENCE_LOG_PATH, "a") as fh:
+                fh.write(json.dumps({**(event or {}), "divergence_count_this_run": self._sim.divergence_count}) + "\n")
+        except OSError:
+            logger.warning("[sim-bankroll] could not append to %s", config.SIM_BANKROLL_DIVERGENCE_LOG_PATH)
 
     def get_shard_balances(self) -> dict[int, float]:
         """Per-exchange-shard available balance, in dollars, keyed by
@@ -172,7 +331,15 @@ class OrderManager:
             count_str, side.upper(), ticker, f"{limit_price:.4f}", api_side, price_str,
             time_in_force, exchange_index,
         )
-        return self._client.place_order(
+        response = self._client.place_order(
             ticker=ticker, side=api_side, count=count_str, price=price_str,
             time_in_force=time_in_force, exchange_index=exchange_index, reduce_only=reduce_only,
         )
+        if self._sim is not None:
+            # Post-fill bookkeeping only -- the order is already done, and a
+            # ledger bug must never turn a real fill into a raised exception.
+            try:
+                self._sim.record_fill(ticker, side, response)
+            except Exception:
+                logger.exception("[sim-bankroll] failed to book %s fill (shadow only -- trading unaffected)", ticker)
+        return response

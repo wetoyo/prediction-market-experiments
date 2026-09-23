@@ -536,6 +536,23 @@ DRY_RUN_SIMULATED_BALANCE_DOLLARS = _float_env("RESOLUTION_ALPHA_DRY_RUN_BALANCE
 # 15-minute markets is immaterial. No effect in dry-run.
 BANKROLL_REFRESH_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_BANKROLL_REFRESH_INTERVAL_SECONDS", 15.0)
 
+# Per-runner simulated bankroll (sim_bankroll.py, added 2026-09-22) -- SHADOW
+# ONLY: tracked by OrderManager from its own fills/settlements and checked
+# against the real balance on every bankroll refresh above, but nothing sizes
+# off it yet. It exists to prove, while this is the only runner on the
+# account, that a per-runner ledger stays in lockstep with reality before
+# several models are given their own slices of one account (see
+# live/SIM_BANKROLL_PLAN.md). The allocation is ALLOCATION_DOLLARS when > 0,
+# else ALLOCATION_FRACTION of the real balance at startup. A divergence
+# beyond TOLERANCE on two consecutive checks is counted, logged and resynced;
+# the running tally lives in SIM_BANKROLL_STATUS_PATH (JSON), each event in
+# SIM_BANKROLL_DIVERGENCE_LOG_PATH (JSONL) -- both under LOG_DIR, below.
+# ENABLED=false removes it from the process entirely. No effect in dry-run.
+SIM_BANKROLL_ENABLED = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_ENABLED", True)
+SIM_BANKROLL_ALLOCATION_DOLLARS = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_DOLLARS", 0.0)
+SIM_BANKROLL_ALLOCATION_FRACTION = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_FRACTION", 1.0)
+SIM_BANKROLL_TOLERANCE_DOLLARS = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_TOLERANCE_DOLLARS", 0.01)
+
 # How often to re-evaluate active markets and poll spot prices, in seconds.
 POLL_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_POLL_INTERVAL_SECONDS", 2.0)
 
@@ -649,6 +666,10 @@ LOG_DIR = os.environ.get(
 # trade decision).
 SAMPLING_ENABLED = _bool_env("RESOLUTION_ALPHA_SAMPLING_ENABLED", False)
 SAMPLING_DB_PATH = os.environ.get("RESOLUTION_ALPHA_SAMPLING_DB_PATH", os.path.join(LOG_DIR, "samples.db"))
+
+# Simulated-bankroll shadow ledger outputs (see SIM_BANKROLL_ENABLED above).
+SIM_BANKROLL_STATUS_PATH = os.path.join(LOG_DIR, "sim_bankroll.json")
+SIM_BANKROLL_DIVERGENCE_LOG_PATH = os.path.join(LOG_DIR, "sim_bankroll_divergences.jsonl")
 
 # Kalshi underlying symbol (from series `tags`) -> Coinbase spot product id.
 # This is a free public proxy for Kalshi's actual settlement source (CF

@@ -1655,6 +1655,7 @@ async def run_forever() -> None:
 
     last_discovery = 0.0
     last_bankroll_refresh = 0.0
+    sim_sync_task: asyncio.Task | None = None
     active_markets: list[ActiveMarket] = []
     cycle_state: dict = {}
     last_cycle_key = None
@@ -1743,6 +1744,13 @@ async def run_forever() -> None:
                 except Exception:
                     logger.exception("failed to fetch account balance -- halting sizing/trading until the next refresh")
                     cycle_state["bankroll_dollars"] = None
+                else:
+                    # Shadow check of the per-runner simulated bankroll against
+                    # the balance just fetched (see order_manager.sync_sim_bankroll).
+                    # Fire-and-forget: its extra REST calls must never delay this
+                    # loop, and nothing here reads its result.
+                    if sim_sync_task is None or sim_sync_task.done():
+                        sim_sync_task = asyncio.create_task(asyncio.to_thread(order_manager.sync_sim_bankroll))
                 last_bankroll_refresh = now_ts
 
             # Only ask the websocket to track order books for markets actually
