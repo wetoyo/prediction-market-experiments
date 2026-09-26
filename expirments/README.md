@@ -23,6 +23,7 @@ account-level reconciler checks the slices sum to the real balance.
 Every runner still defaults to sizing off the **whole** balance with the
 ledger in shadow, so don't run more than one live at once until each is set
 up for a shared account. How: `resolution_alpha/live/SIM_BANKROLL_PLAN.md`,
-"Running the other two experiments beside resolution_alpha". Tests:
+"Running the other two experiments beside resolution_alpha"; current status and next steps:
+`MULTI_RUNNER_HANDOFF.md`. Tests:
 `python -m pytest shared/tests resolution_alpha/tests`, plus
 `python test_ledger_wiring.py` in each of the other two.

@@ -1,6 +1,7 @@
 # Handoff: per-runner bankroll (resolution_alpha), Phases 1–3
 
-**Last updated:** 2026-09-26 ~15:10 EDT, by a Claude Code session.
+**Last updated:** 2026-09-26 ~15:00 EDT (Pi clock), by a Claude Code session. For running all
+three experiments on the account, see `../../MULTI_RUNNER_HANDOFF.md`.
 **Owner:** wetoyo. **Rollout plan and design:** `live/SIM_BANKROLL_PLAN.md`. Read it for the *why*;
 this file covers *where things stand and what to do next*.
 
@@ -10,7 +11,7 @@ this file covers *where things stand and what to do next*.
 
 1. **Were the new-format order IDs (`ra-<y|n>-<28 hex>`) accepted?** The owner restarted the service
    onto `2fb9c95` at **14:37:48 EDT** (PID **45269**); the ledger re-initialized at $5.2971 with
-   sizing on. No order had been placed since, as of ~15:05. Check:
+   sizing on. No order had been placed since, as of 14:58. Check:
 
    ```
    ssh wetoyo@100.109.148.56
@@ -32,10 +33,10 @@ this file covers *where things stand and what to do next*.
    - whether btc_implied_prob gets `EXCLUDE_SERIES=KXBTC15M,KXBTCD` to stay off resolution_alpha's
      tickers;
    - when to put resolution_alpha itself into shared mode (restart, while flat).
-   **Deploy note:** resolution_alpha's `order_manager.py` now imports `sim_bankroll` from
-   `../shared/`. That's a no-op for the running process, but the Pi needs the new `expirments/shared/`
-   directory (a normal `git merge --ff-only`) before its **next** restart, or the service fails at
-   import.
+   **Deploy note:** resolution_alpha's `order_manager.py` on `main` (`1b9145e`) imports
+   `sim_bankroll` from `../shared/`. That's a no-op for the running process, but the Pi, still on
+   `24e28af`, must fast-forward to `main` before its **next** restart. Steps are in
+   `../../MULTI_RUNNER_HANDOFF.md`, "Start here" (2).
 
 After that, continue with "Next steps" below from step 3 (watch Phase 2, then try a fixed dollar
 allocation).
@@ -339,5 +340,5 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 | 2026-09-26 01:40 EDT | 16 min since the Phase 2 restart (PID 41866) / 0 new trades | 0 | 0 | 0 / few | 0 | Payload caveat: fields ✅, `min_ts` ✅, reconciler smoke test `ok` (gap $0.0000). Tag acceptance still pending (no orders since the restart). Same session: branch merged into `main` (`3f49dad`) after reverting `6598821` (`5facfbf`); submodule `bb616f4`. |
 | 2026-09-26 01:48 EDT | 24 min since the Phase 2 restart / 0 new trades | 0 | 0 (file absent) | 0 / 88 | 0 | Owner went to sleep. Still no order since the restart, so tag acceptance is unconfirmed. Next session: see "Start here". |
 | 2026-09-26 14:35 EDT | 13h 11m since the Phase 2 restart (PID 41866) / 23 entry fills, all settled (no open positions) | 0 | 0 (file absent) | 0 / 2950 | 0 | **Tag accepted:** 40 `LIVE ORDER`s (all `ra-<hex>`, per `inspect_order_records.py`), 23 `entry filled`, the rest IOC 0-fills ("no marketable depth"), **0 HTTPError**. Ledger $5.2971 == real $5.2971 (up from $3.3313), gap ~1e-15, `fill_seq` 23. Phase 2 sizing is working: 1-4 contracts per order, `no_bankroll=0` in all 132 eval summaries. Only ERRORs: 2 ws keepalive-ping disconnects (03:11, 13:58), both auto-reconnected. |
-| 2026-09-26 14:38 EDT | Restart onto `24e28af` (incl. `2fb9c95`) at 14:37:48, PID 45269 | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $5.2971 of real $5.2971, adopted 0 of 0`. New ID format `ra-<y|n>-<28 hex>` not yet exercised (no order by ~15:05). |
+| 2026-09-26 14:38 EDT | Restart onto `24e28af` (incl. `2fb9c95`) at 14:37:48, PID 45269 | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $5.2971 of real $5.2971, adopted 0 of 0`. New ID format `ra-<y|n>-<28 hex>` not yet exercised (no order by 14:58). |
 | | | | | | | |
