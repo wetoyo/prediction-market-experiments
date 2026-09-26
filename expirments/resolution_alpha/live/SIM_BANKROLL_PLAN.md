@@ -209,9 +209,10 @@ change is the order tag in `client_order_id`.
   records carry `client_order_id`, `ticker`, `order_id`, `fill_count_fp` and all four exact-cost
   fields, and the list honours `min_ts` (1h window: 3 of 200). Restart recovery and attribution can
   rely on them. The reconciler's smoke test against the live ledger came back `ok`, gap $0.0000.
-  **Still unverified:** that Kalshi *accepts* a tagged `client_order_id`. No order had been placed
-  since the tagging restart when this was checked. The first `LIVE ORDER` line followed by
-  `entry filled` (not a 400) settles it; see the handoff's results log.
+  **Tag acceptance verified 2026-09-26 14:35 EDT:** Kalshi accepts `ra-<32 hex>`. 40 tagged orders
+  since the 01:24 restart, 23 filled, the rest IOC 0-fills, 0 HTTP errors; the orders list shows
+  them as `ra-<hex>`. The `ra-<y|n>-<28 hex>` format from `2fb9c95` still needs the same check after
+  its restart.
 - **The other experiments.** `btc_implied_prob` and `golf_field_alpha` predate the ledger (they
   still read the cents `balance` field). Each needs `sim_bankroll` and this wiring before it trades
   beside resolution_alpha. The main sync they were waiting on is done (2026-09-26), so this work can

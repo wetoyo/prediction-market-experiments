@@ -1,6 +1,8 @@
 # Handoff: per-runner bankroll (resolution_alpha), Phases 1–3
 
-**Last updated:** 2026-09-26 01:50 EDT, by a Claude Code session. The owner went to sleep right after.
+**Last updated:** 2026-09-26 14:40 EDT, by a Claude Code session. Steps 1 and 2 of "Start here" are
+done: tag accepted, ledger healthy (see the results log). Step 3, the `2fb9c95` restart, is waiting on
+the owner.
 **Owner:** wetoyo. **Rollout plan and design:** `live/SIM_BANKROLL_PLAN.md`. Read it for the *why*;
 this file covers *where things stand and what to do next*.
 
@@ -91,7 +93,10 @@ decides when.
 
 ---
 
-## Open caveat: Kalshi payload fields (mostly verified 2026-09-26; one item left)
+## Closed caveat: Kalshi payload fields (all verified 2026-09-26)
+
+**Tag acceptance (2026-09-26 14:35 EDT):** accepted. 40 `ra-<hex>` orders since the 01:24 restart,
+23 filled, 0 HTTP errors, and the orders list reads the tags back. Row 4 below is verified.
 
 **Result (2026-09-26 01:40 EDT):** `inspect_order_records.py` shows all 200 order records carry `client_order_id`, `ticker`, `order_id`, `fill_count_fp` and all four exact-cost fields, and `min_ts` is honoured. `account_reconciler.py --count 2` came back `ok`, gap $0.0000. So rows 1–3 of the table below are **verified**. Row 4 (Kalshi *accepts* the tag) is still open: no order had been placed since the 01:24 restart (the last order was 00:59, untagged). Check 1 below settles it on the first trade. The original caveat text follows for reference.
 
@@ -149,8 +154,7 @@ and the mirror-image gap at settlement briefly under-sizes.
 
 ## Next steps, in order
 
-1. **Clear the caveat above.** Fields are verified. Still needed: confirm the first tagged order is
-   accepted, then record it in the results log at the bottom of this file.
+1. ~~**Clear the caveat above.**~~ **Done 2026-09-26 14:35**: fields and tag acceptance both verified.
 2. **Restart onto `2fb9c95`** when the owner OKs it (`sudo systemctl restart
    resolution-alpha.service`). Afterwards, check that the new-format order IDs are accepted, using
    the same journal grep.
@@ -338,4 +342,5 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 | 2026-09-26 01:35 EDT | Phase 2 restart at 01:24:39 (PID 41866, `f16bb50`, sizing ON) | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $3.3313 of real $3.3313, adopted 0 of 0`. No orders yet since the restart, so tagged-ID acceptance is still unconfirmed (see the caveat). |
 | 2026-09-26 01:40 EDT | 16 min since the Phase 2 restart (PID 41866) / 0 new trades | 0 | 0 | 0 / few | 0 | Payload caveat: fields ✅, `min_ts` ✅, reconciler smoke test `ok` (gap $0.0000). Tag acceptance still pending (no orders since the restart). Same session: branch merged into `main` (`3f49dad`) after reverting `6598821` (`5facfbf`); submodule `bb616f4`. |
 | 2026-09-26 01:48 EDT | 24 min since the Phase 2 restart / 0 new trades | 0 | 0 (file absent) | 0 / 88 | 0 | Owner went to sleep. Still no order since the restart, so tag acceptance is unconfirmed. Next session: see "Start here". |
+| 2026-09-26 14:35 EDT | 13h 11m since the Phase 2 restart (PID 41866) / 23 entry fills, all settled (no open positions) | 0 | 0 (file absent) | 0 / 2950 | 0 | **Tag accepted:** 40 `LIVE ORDER`s (all `ra-<hex>`, per `inspect_order_records.py`), 23 `entry filled`, the rest IOC 0-fills ("no marketable depth"), **0 HTTPError**. Ledger $5.2971 == real $5.2971 (up from $3.3313), gap ~1e-15, `fill_seq` 23. Phase 2 sizing is working: 1-4 contracts per order, `no_bankroll=0` in all 132 eval summaries. Only ERRORs: 2 ws keepalive-ping disconnects (03:11, 13:58), both auto-reconnected. |
 | | | | | | | |
