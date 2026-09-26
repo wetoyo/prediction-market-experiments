@@ -45,13 +45,26 @@ def test_zero_fill():
     assert _reconcile_fill(resp, _sim(0.97, 200.0), "no", dry_run=False) == (0.0, 0.0, 0.0)
 
 
-def test_implausible_price_falls_back_to_simulated():
-    # avg_fill_price nowhere near the simulated favored-side price (e.g. an API
-    # shape change, or a denomination mistake) -> trust the simulation, warn.
-    resp = {"fill_count": "100.00", "average_fill_price": "0.9730"}  # -> favored 0.027, sim says 0.973
-    filled, price, fee = _reconcile_fill(resp, _sim(0.9730, 100.0), "no", dry_run=False)
+def test_large_divergence_still_books_the_real_fill():
+    # 2026-09-06: a NO entry the walk simulated at 0.90 actually matched at
+    # 0.56 (YES avg_fill_price 0.44) because the ws book the walk read was
+    # stale. Kalshi's matched price is authoritative -- book it, warn loudly,
+    # do NOT fall back to the simulated 0.90 (the old behaviour, which booked
+    # a fiction and mis-stated cost/bankroll/edge for the trade).
+    resp = {"fill_count": "28.00", "average_fill_price": "0.4400"}
+    filled, price, _ = _reconcile_fill(resp, _sim(0.9000, 28.0), "no", dry_run=False)
+    assert filled == 28.0
+    assert abs(price - 0.5600) < 1e-9        # 1 - 0.44, the real fill -- not 0.90
+
+
+def test_out_of_range_converted_price_falls_back_to_simulated():
+    # The residual guard: a converted price outside (0, 1) means the response
+    # was malformed (API shape change / denomination mistake), not a real
+    # fill -> trust the simulation, warn.
+    resp = {"fill_count": "100.00", "average_fill_price": "1.2000"}  # -> favored -0.20
+    filled, price, _ = _reconcile_fill(resp, _sim(0.9730, 100.0), "no", dry_run=False)
     assert filled == 100.0
-    assert price == 0.9730                   # simulated, not the 0.027 conversion
+    assert price == 0.9730                   # simulated, not the -0.20 conversion
 
 
 def test_missing_price_falls_back_to_simulated():

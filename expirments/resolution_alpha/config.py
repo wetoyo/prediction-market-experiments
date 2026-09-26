@@ -19,6 +19,11 @@ def _float_env(name: str, default: float) -> float:
     return float(val) if val is not None else default
 
 
+def _str_env(name: str, default: str) -> str:
+    val = os.environ.get(name)
+    return val.strip() if val is not None and val.strip() else default
+
+
 def _set_env(name: str, default: tuple[str, ...]) -> frozenset:
     val = os.environ.get(name)
     if val is None:
@@ -158,6 +163,19 @@ MIN_STACK_ENTRY_SECONDS_LEFT = _float_env("RESOLUTION_ALPHA_MIN_STACK_ENTRY_SECO
 ORDERBOOK_SUBSCRIBE_LOOKAHEAD_SECONDS = _float_env(
     "RESOLUTION_ALPHA_ORDERBOOK_SUBSCRIBE_LOOKAHEAD_SECONDS", ENTRY_WINDOW_SECONDS + 60
 )
+
+# ws order-book staleness handling at trade-decision time (added 2026-09-06).
+# When the ws book feeding a candidate is older than MAX_ORDERBOOK_AGE_SECONDS
+# (seconds since its last snapshot/delta -- ws_feed.get_orderbook_age), the
+# runner acts per ORDERBOOK_AGE_ACTION:
+#   "shadow" -- log a "[stale-book]" WARNING and nothing else (default)
+#   "rest"   -- also discard the stale ws book for this one evaluation and
+#               re-fetch it over REST (authoritative, ~1 RTT slower)
+# There is deliberately NO "skip" action: a stale book must never silently
+# cost a fill. Default MAX_ORDERBOOK_AGE_SECONDS is +inf -> the whole check
+# is a no-op until a measured age distribution justifies a real threshold.
+MAX_ORDERBOOK_AGE_SECONDS = _float_env("RESOLUTION_ALPHA_MAX_ORDERBOOK_AGE_SECONDS", float("inf"))
+ORDERBOOK_AGE_ACTION = _str_env("RESOLUTION_ALPHA_ORDERBOOK_AGE_ACTION", "shadow")
 
 # Minimum model-implied probability on the favored side to consider trading.
 MIN_FAVORED_PROBABILITY = _float_env("RESOLUTION_ALPHA_MIN_PROB", 0.97)
@@ -504,6 +522,59 @@ MAX_TRUSTED_EDGE_PROB = _float_env("RESOLUTION_ALPHA_MAX_TRUSTED_EDGE_PROB", 0.0
 # once DRY_RUN=false -- real balance is fetched from the account instead.
 DRY_RUN_SIMULATED_BALANCE_DOLLARS = _float_env("RESOLUTION_ALPHA_DRY_RUN_BALANCE", 1000.0)
 
+# How often to re-query the real account balance that feeds Kelly sizing
+# (evaluate_and_maybe_trade / _kelly_contracts), in seconds. Deliberately
+# decoupled from the 15-minute cycle_state bucket: the balance used to be
+# snapshotted once per bucket and then only ever decremented locally per
+# fill, so across a busy window it ratcheted monotonically toward zero and
+# never saw settlement credits return -- the 2nd/3rd/4th entry in a window
+# sized off almost nothing (2026-09-06: 5-contract fills where Kelly on
+# the real balance wanted 25+). The per-fill local decrement still runs
+# between refreshes, so a burst of fills in one pass still can't
+# over-commit against a balance the exchange API has not caught up to
+# yet. ~4 calls/min at the default; settlement-credit lag of <=15s on
+# 15-minute markets is immaterial. No effect in dry-run.
+BANKROLL_REFRESH_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_BANKROLL_REFRESH_INTERVAL_SECONDS", 15.0)
+
+# Per-runner simulated bankroll (sim_bankroll.py, added 2026-09-22): tracked by
+# OrderManager from its own fills/settlements and checked against the real
+# balance on every bankroll refresh above. Shadow only unless
+# SIZE_FROM_SIM_BANKROLL (below) is on. It exists so several models can later
+# be given their own slices of one account, each sizing off its own ledger
+# (see live/SIM_BANKROLL_PLAN.md). The allocation is ALLOCATION_DOLLARS when > 0,
+# else ALLOCATION_FRACTION of the real balance at startup. A divergence
+# beyond TOLERANCE on two consecutive checks is counted, logged and resynced;
+# the running tally lives in SIM_BANKROLL_STATUS_PATH (JSON), each event in
+# SIM_BANKROLL_DIVERGENCE_LOG_PATH (JSONL) -- both under LOG_DIR, below.
+# ENABLED=false removes it from the process entirely. No effect in dry-run.
+SIM_BANKROLL_ENABLED = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_ENABLED", True)
+SIM_BANKROLL_ALLOCATION_DOLLARS = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_DOLLARS", 0.0)
+SIM_BANKROLL_ALLOCATION_FRACTION = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_FRACTION", 1.0)
+SIM_BANKROLL_TOLERANCE_DOLLARS = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_TOLERANCE_DOLLARS", 0.01)
+# Phase 2 (live/SIM_BANKROLL_PLAN.md): size off the ledger instead of the
+# whole real balance. OrderManager.get_balance_dollars then returns
+# min(ledger cash, real balance) -- never more than the account holds. The
+# divergence check + resync keep running as the safety net. Needs
+# SIM_BANKROLL_ENABLED; ignored (real balance, with a warning) without it.
+SIZE_FROM_SIM_BANKROLL = _bool_env("RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL", False)
+# Phase 3 (live/SIM_BANKROLL_PLAN.md): several runners on one account. Every
+# order carries client_order_id "<ORDER_TAG>-<uuid>" so any process can tell
+# which runner placed it; ORDER_TAG must be unique per runner on the account.
+# With SHARED_ACCOUNT on, the per-runner check above stops comparing against
+# the real balance (other runners move it too) -- account_reconciler.py checks
+# the sum of every runner's ledger instead -- and a restart resumes this
+# ledger from its own last status file instead of re-allocating and adopting
+# every open position on the account. Off = the single-runner behaviour.
+ORDER_TAG = _str_env("RESOLUTION_ALPHA_ORDER_TAG", "ra")
+SIM_BANKROLL_SHARED_ACCOUNT = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_ACCOUNT", False)
+# Shared-account mode fails closed when a runner's ledger state is lost: if
+# its status file is missing/unusable but its tag has filled orders on the
+# account in the last FRESH_ALLOCATION_LOOKBACK, it refuses to size (no
+# trades) rather than silently restart at a full allocation. Set this to true
+# for one restart to accept starting over, then unset it.
+SIM_BANKROLL_ALLOW_FRESH_ALLOCATION = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOW_FRESH_ALLOCATION", False)
+SIM_BANKROLL_FRESH_ALLOCATION_LOOKBACK_SECONDS = 7 * 24 * 3600
+
 # How often to re-evaluate active markets and poll spot prices, in seconds.
 POLL_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_POLL_INTERVAL_SECONDS", 2.0)
 
@@ -617,6 +688,10 @@ LOG_DIR = os.environ.get(
 # trade decision).
 SAMPLING_ENABLED = _bool_env("RESOLUTION_ALPHA_SAMPLING_ENABLED", False)
 SAMPLING_DB_PATH = os.environ.get("RESOLUTION_ALPHA_SAMPLING_DB_PATH", os.path.join(LOG_DIR, "samples.db"))
+
+# Simulated-bankroll shadow ledger outputs (see SIM_BANKROLL_ENABLED above).
+SIM_BANKROLL_STATUS_PATH = os.path.join(LOG_DIR, "sim_bankroll.json")
+SIM_BANKROLL_DIVERGENCE_LOG_PATH = os.path.join(LOG_DIR, "sim_bankroll_divergences.jsonl")
 
 # Kalshi underlying symbol (from series `tags`) -> Coinbase spot product id.
 # This is a free public proxy for Kalshi's actual settlement source (CF
