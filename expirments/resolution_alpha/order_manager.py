@@ -55,13 +55,20 @@ an unfillable remainder, or, above ~0.995, rounded to 1.0000/0.0000 ->
 import json
 import logging
 import os
+import sys
 import time
 import uuid
+from pathlib import Path
 
 import config
 from config import DRY_RUN
 from kalshi_gateway import KalshiTradingClient
-from sim_bankroll import CheckResult, SimulatedBankroll
+
+# sim_bankroll.py is shared by all three experiments (../shared/).
+_SHARED_DIR = str(Path(__file__).resolve().parents[1] / "shared")
+if _SHARED_DIR not in sys.path:
+    sys.path.append(_SHARED_DIR)
+from sim_bankroll import CheckResult, SimulatedBankroll  # noqa: E402
 
 logger = logging.getLogger("resolution_alpha.order_manager")
 

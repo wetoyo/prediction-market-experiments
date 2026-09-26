@@ -536,7 +536,7 @@ DRY_RUN_SIMULATED_BALANCE_DOLLARS = _float_env("RESOLUTION_ALPHA_DRY_RUN_BALANCE
 # 15-minute markets is immaterial. No effect in dry-run.
 BANKROLL_REFRESH_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_BANKROLL_REFRESH_INTERVAL_SECONDS", 15.0)
 
-# Per-runner simulated bankroll (sim_bankroll.py, added 2026-09-22): tracked by
+# Per-runner simulated bankroll (../shared/sim_bankroll.py, added 2026-09-22): tracked by
 # OrderManager from its own fills/settlements and checked against the real
 # balance on every bankroll refresh above. Shadow only unless
 # SIZE_FROM_SIM_BANKROLL (below) is on. It exists so several models can later

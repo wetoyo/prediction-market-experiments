@@ -213,10 +213,8 @@ change is the order tag in `client_order_id`.
   since the 01:24 restart, 23 filled, the rest IOC 0-fills, 0 HTTP errors; the orders list shows
   them as `ra-<hex>`. The `ra-<y|n>-<28 hex>` format from `2fb9c95` still needs the same check after
   its restart.
-- **The other experiments.** `btc_implied_prob` and `golf_field_alpha` predate the ledger (they
-  still read the cents `balance` field). Each needs `sim_bankroll` and this wiring before it trades
-  beside resolution_alpha. The main sync they were waiting on is done (2026-09-26), so this work can
-  now start from `main`.
+- ~~**The other experiments.**~~ **Code done 2026-09-26, not yet run live**: see "Running the other
+  two experiments beside resolution_alpha" below.
 - Items 3 to 6 below still apply as written.
 
 ### Original design notes
@@ -253,7 +251,138 @@ change is the order tag in `client_order_id`.
 6. **Shards.** Collateral is per `exchange_index`. Allocations are in dollars across the whole account,
    so the per-shard guard (`get_shard_balances`) still has to run against the real account.
 
-## Syncing this branch with `main` (done 2026-09-26)
+## Running the other two experiments beside resolution_alpha (code done 2026-09-26, not run live)
+
+### What's built
+
+- **`expirments/shared/`** is the home of the ledger now. `sim_bankroll.py` moved there from
+  `resolution_alpha/` (each `order_manager.py` puts `../shared` on `sys.path`, so the import line
+  didn't change). Two additions, both no-ops for resolution_alpha:
+  - `book_fill(ticker, side, count, cost, order_id, opened_ts)`: books an exact fill, or the newly
+    filled part of an order that's already partly booked.
+  - **Holds.** `set_hold(order_id, dollars)` records the cash a resting order reserves.
+    - The ledger's *available* cash is `cash - sum(holds)`, and `check`, `sizing_cash` and the status
+      file's `sim_cash` use it.
+    - `ledger_cash` (cash including holds) and `holds` are new status-file keys. `resume` reads
+      `ledger_cash` and falls back to `sim_cash` for older files.
+- **`shared/tagged_ledger.py`: `TaggedLedger`**, the wiring for runners whose orders can rest.
+  btc_implied_prob and golf_field_alpha place GTC orders (the `place_order` default).
+  btc_implied_prob also rests take-profit orders. So fills can land long after the POST returns,
+  which resolution_alpha's book-from-the-POST wiring would miss. It works like this:
+  - `record_order` runs after each POST. It books the immediate fill from the response
+    (provisional, 4-decimal averages), tracks the order, and holds the remainder.
+  - `sync` runs every `SIM_BANKROLL_SYNC_SECONDS` (15s) in a daemon thread, plus once inline at
+    start.
+    1. Updates tracked orders: one `GET /portfolio/orders?status=resting` listing, plus
+       `GET /portfolio/orders/{id}` for each tracked order that has left it. Books the change in
+       `fill_count_fp` and the four exact-cost fields, which also corrects the provisional
+       booking. Sets each hold to remaining × price. Drops `executed`/`canceled` orders.
+    2. Applies settlements for held tickers.
+    3. Fetches the real balance last, then runs the check and writes the status file.
+  - The 15s cadence (not the strategy's 60s/300s loop) keeps the status file fresh for
+    `account_reconciler.py`, which treats a file older than 90s as stale.
+  - Everything else matches resolution_alpha's wiring: the per-runner check with two-check
+    confirmation, `sizing_cash`, tags, shared-account resume, fail-closed lost state, the
+    two-runners-on-one-log-dir guard, and a status file the reconciler reads unchanged.
+  - On a resume it recovers any order placed after the status file's last write. It lists the
+    account's orders since `updated_ts - 120`, picks this tag's that the file doesn't know, and books
+    them in full at exact cost.
+  - A fresh initialize adopts resting orders as well as positions. Alone on the account, that's all
+    of them; in shared mode, only this tag's. Their fills so far are already in the balance, so
+    only later fills are booked.
+  - The fresh-allocation lookback is 14 days rather than 7, because golf baskets are held up to 10.
+- **btc_implied_prob** (tag `bip`) and **golf_field_alpha** (tag `gfa`), per experiment:
+  - `OrderManager` builds a `TaggedLedger` when live and `<P>SIM_BANKROLL_ENABLED` (on by default,
+    so shadow by default). `strategy.py --execute` calls `start_ledger()` before its startup
+    reconciliation.
+  - Every order carries `<tag>-<y|n>-<28 hex>`.
+  - `get_balance_dollars` reads `balance_dollars` (cents `balance` as a fallback). With
+    `SIZE_FROM_SIM_BANKROLL` on, it returns the ledger's `sizing_cash`.
+  - With `SIZE_FROM_SIM_BANKROLL` on, `buy_favored_side` raises `OrderRefused` (nothing is sent)
+    when an order could cost more than the ledger's available cash. The strategies size several
+    orders off one balance read, and nothing else stops them spending past the allocation. An order
+    that only closes contracts the ledger holds is always allowed (e.g. btc's exits and
+    take-profits).
+  - Shared mode: `get_positions` returns only this ledger's positions, so the startup
+    reconciliation can't adopt another runner's. btc's `get_resting_orders` returns only this tag's,
+    so its take-profit logic can't cancel another runner's orders.
+  - btc_implied_prob: `_execute` skips a refused entry. `<P>EXCLUDE_SERIES` drops series from
+    discovery (see the hazards below).
+  - golf_field_alpha: a basket whose new legs don't fit in the ledger's available cash is skipped
+    whole, not bought in part.
+  - **golf bug fixed along the way:** live runs sized Kelly off `DRY_RUN_SIMULATED_BALANCE_DOLLARS`
+    ($1000) whatever the account held, because `scan()` never passed a bankroll to `plan_basket`.
+    Only `MAX_EVENT_COST_DOLLARS` ($40) bounded them. Live runs now pass the real (or ledger)
+    balance, and skip the tick if it can't be read.
+- **Tests.** `python -m pytest shared/tests resolution_alpha/tests` from `expirments/`: 28 new plus
+  105 existing. `python test_ledger_wiring.py` in each of `btc_implied_prob/` and
+  `golf_field_alpha/`. They run against `shared/tests/fake_kalshi.py`, a fake account that fills
+  GTC orders partly, rests the remainder, fills it later, cancels, holds, pairs and settles. One
+  test runs two shared-mode runners and `AccountReconciler` over one fake account: `ok` through
+  fills, resting fills and settlements, then `suspect` → `diverged` on an outside trade.
+
+### Config (`<P>` = `BTC_IMPLIED_PROB_` or `GOLF_FIELD_ALPHA_`)
+
+| Env var | Default | What |
+|---|---|---|
+| `<P>SIM_BANKROLL_ENABLED` | true | Build the ledger on a live run (shadow unless the next flag is on) |
+| `<P>SIZE_FROM_SIM_BANKROLL` | false | Size off (and refuse orders past) the ledger's available cash |
+| `<P>SIM_BANKROLL_SHARED_ACCOUNT` | false | Several runners on the account: needs the next one |
+| `<P>SIM_BANKROLL_ALLOCATION_DOLLARS` | 0 (use the fraction) | Fixed allocation |
+| `<P>SIM_BANKROLL_ALLOCATION_FRACTION` | 1.0 | Fraction of the balance at a fresh start |
+| `<P>ORDER_TAG` | `bip` / `gfa` | 1-5 chars, no `-`, unique on the account |
+| `<P>SIM_BANKROLL_SYNC_SECONDS` | 15 | Background sync cadence |
+| `<P>SIM_BANKROLL_ALLOW_FRESH_ALLOCATION` | false | One restart only, after a lost status file |
+| `<P>LOG_DIR` | `<exp>/live/logs` | Status file + divergence log |
+| `BTC_IMPLIED_PROB_EXCLUDE_SERIES` | empty | Comma list of series btc never trades |
+
+### Steps to go live beside resolution_alpha
+
+1. **Pick allocations.** Together they must stay under the balance, with some reserve left over. The
+   account held about $5.30 on 2026-09-26, so each slice would be a dollar or two, and at that size
+   Kelly rounds most orders to 0 contracts. Fund the account first if that matters.
+2. **resolution_alpha into shared mode.** Set `RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_ACCOUNT=true` and
+   `RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_DOLLARS=<x>` in `live/.env`. Restart it while it's flat,
+   outside a resolution window. A fresh shared ledger adopts no positions.
+3. **Each other runner's `live/.env`:** `<P>DRY_RUN=false`, `<P>SIZE_FROM_SIM_BANKROLL=true`,
+   `<P>SIM_BANKROLL_SHARED_ACCOUNT=true`, `<P>SIM_BANKROLL_ALLOCATION_DOLLARS=<y>`, and for btc the
+   `EXCLUDE_SERIES` choice below. Start it the usual way (`live/start_live.sh`). Expect
+   `[sim-bankroll] initialized (SIZING off it, shared account, tag 'bip')` in its log.
+4. **Run the reconciler continuously** over all three status files:
+   ```
+   ../../.venv/bin/python -u account_reconciler.py --interval 30 \
+     --ledger live/logs/sim_bankroll.json \
+     --ledger ../btc_implied_prob/live/logs/sim_bankroll.json \
+     --ledger ../golf_field_alpha/live/logs/sim_bankroll.json
+   ```
+5. **First checks** (same as resolution_alpha's):
+   - Kalshi accepts the `bip-…` / `gfa-…` IDs: `LIVE ORDER` followed by fills, no 400s.
+   - `account_reconciler.json` stays `ok`, including while a bip/gfa order rests (the hold
+     assumption below).
+
+### Hazards and unverified assumptions
+
+- **Resting-order collateral (unverified).** The ledger assumes a resting buy holds
+  remaining × limit out of `balance`, and that an order closing contracts the ledger holds (btc's
+  take-profit) holds nothing. No runner has rested an order on this account since the ledger
+  exists. If either assumption is wrong, the reconciler shows a gap of about the resting order's
+  value for as long as it rests. The fix goes in `TaggedLedger._hold_dollars`.
+- **btc_implied_prob overlaps resolution_alpha's series.** btc scans the fifteen_min, thirty_min and
+  hourly BTC series, which include KXBTC15M and KXBTCD; resolution_alpha trades those plus KXETH15M
+  and KXETHD. Kalshi nets positions per account (Phase 3 item 3), so if the two hold opposite legs
+  on one ticker, the account redeems the pair at once. At settlement the account may then hold
+  nothing and write no settlement record, and both ledgers would keep a stale position with the $1
+  unaccounted for. btc's resting take-profits can also make resolution_alpha's IOC orders cancel
+  under `taker_at_cross` self-trade prevention (item 4). `BTC_IMPLIED_PROB_EXCLUDE_SERIES=KXBTC15M,KXBTCD`
+  avoids both, at the cost of most of btc's markets. **The owner decides.** The reconciler's
+  `overlapping_tickers` shows it when it happens.
+- **btc_implied_prob's `_to_api_order` still rounds prices to the cent** (pre-existing). The crypto
+  series now tick in 0.001 steps in [0.90, 1.00], where resolution_alpha found that rounding
+  under-fills or gets `invalid_price` (its `order_manager.py` docstring). The rest of the band is
+  still whole-cent.
+- golf_field_alpha's player markets never overlap the crypto series.
+
+
 
 `main` now carries everything on this branch. From here on, work on `main`; the
 `resolution-alpha-no-kalshi-state` branch stays on `origin` for history.

@@ -40,7 +40,7 @@ with contextlib.suppress(Exception):
 import config
 import positions_store
 from discovery import GolfEvent, find_open_golf_events
-from order_manager import OrderManager
+from order_manager import OrderManager, OrderRefused
 from selection import BasketPlan, FieldQuote, plan_basket
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -86,9 +86,11 @@ def _print_plan(event: GolfEvent, plan: BasketPlan, now: datetime) -> None:
         )
 
 
-def scan(events: list[GolfEvent], now: datetime) -> dict[str, BasketPlan]:
+def scan(events: list[GolfEvent], now: datetime, bankroll: float | None = None) -> dict[str, BasketPlan]:
     """Builds the configured-method basket for every in-window event and
     prints both methods. Returns {event_ticker: plan_for_config_method}.
+    `bankroll` sizes the Kelly legs; None means
+    config.DRY_RUN_SIMULATED_BALANCE_DOLLARS (dry-run / scan-only).
     """
     plans: dict[str, BasketPlan] = {}
     in_window = [e for e in events if _within_trade_window(e, now)]
@@ -98,7 +100,9 @@ def scan(events: list[GolfEvent], now: datetime) -> dict[str, BasketPlan]:
     )
     for event in in_window:
         quotes = _quotes_for_event(event)
-        method_plans = {m: plan_basket(quotes, method=m) for m in ("devig_edge", "favorites_basket")}
+        method_plans = {
+            m: plan_basket(quotes, method=m, bankroll=bankroll) for m in ("devig_edge", "favorites_basket")
+        }
         _print_event_header(event, next(iter(method_plans.values())), now)
         for method, plan in method_plans.items():
             _print_plan(event, plan, now)
@@ -106,6 +110,20 @@ def scan(events: list[GolfEvent], now: datetime) -> dict[str, BasketPlan]:
                 plans[event.event_ticker] = plan
         print()
     return plans
+
+
+def _live_bankroll(manager: OrderManager) -> float | None:
+    """The live Kelly bankroll (real balance, or the ledger's cash with
+    SIZE_FROM_SIM_BANKROLL on). None: couldn't read it -- skip trading this
+    tick rather than guess. Before 2026-09-26 live runs sized off
+    DRY_RUN_SIMULATED_BALANCE_DOLLARS ($1000) whatever the account held,
+    because scan() never passed a bankroll; only MAX_EVENT_COST_DOLLARS
+    bounded them."""
+    try:
+        return manager.get_balance_dollars()
+    except Exception:
+        logger.exception("failed to fetch the account balance -- not trading this tick")
+        return None
 
 
 def execute(
@@ -121,6 +139,16 @@ def execute(
         event = events_by_ticker.get(event_ticker)
         if event is None:
             continue
+        # A basket is only a hedge if all its legs get bought: with the ledger
+        # limiting spend, skip the event rather than buy part of it.
+        new_cost = sum(leg.cost for leg in plan.legs if leg.ticker not in open_positions)
+        spendable = manager.spendable_dollars()
+        if spendable is not None and new_cost > spendable + 1e-9:
+            logger.warning(
+                "%s: basket's new legs cost $%.2f but this runner's ledger has $%.2f available -- skipping the event",
+                event_ticker, new_cost, spendable,
+            )
+            continue
         for leg in plan.legs:
             if leg.ticker in open_positions:
                 held = open_positions[leg.ticker]["contracts"]
@@ -130,6 +158,8 @@ def execute(
                 manager.buy_favored_side(
                     ticker=leg.ticker, side="yes", contracts=leg.contracts, limit_price=leg.buy_price,
                 )
+            except OrderRefused:
+                continue  # over this runner's ledger cash; logged by order_manager, nothing placed
             except Exception:
                 logger.exception("%s (%s): order placement failed, will retry next tick", leg.ticker, leg.name)
                 continue
@@ -155,6 +185,10 @@ def main() -> None:
     args = parser.parse_args()
 
     manager = OrderManager()
+    if args.execute and not manager.dry_run:
+        # Per-runner ledger (config.py, "Per-runner bankroll"): first sync now,
+        # before the reconciliation and the first order, then in the background.
+        manager.start_ledger()
     open_positions: dict = positions_store.load(config.POSITIONS_STATE_PATH)
     reconciled = False
     logger.info(
@@ -176,10 +210,13 @@ def main() -> None:
             positions_store.reconcile_with_kalshi(open_positions, manager, events)
             reconciled = True
 
-        plans = scan(events, now)
+        live = args.execute and not manager.dry_run
+        bankroll = _live_bankroll(manager) if live else None
+        plans = scan(events, now, bankroll=bankroll)
 
         if args.execute:
-            execute(events, plans, open_positions, manager)
+            if not (live and bankroll is None):
+                execute(events, plans, open_positions, manager)
             positions_store.save(config.POSITIONS_STATE_PATH, open_positions)
 
         if args.loop is None:

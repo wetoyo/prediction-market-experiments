@@ -20,6 +20,18 @@ def _float_env(name: str, default: float) -> float:
     return float(val) if val is not None else default
 
 
+def _str_env(name: str, default: str) -> str:
+    val = os.environ.get(name)
+    return val if val is not None else default
+
+
+def _tuple_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return tuple(s.strip().upper() for s in val.split(",") if s.strip())
+
+
 # Master safety switch. Must be explicitly set to false to place real orders.
 DRY_RUN = _bool_env("BTC_IMPLIED_PROB_DRY_RUN", True)
 
@@ -143,3 +155,47 @@ TRAILING_STOP_DROP = _float_env("BTC_IMPLIED_PROB_TRAILING_STOP_DROP", 0.05)
 # whatever directory the process is run from (see live/start_live.ps1, which
 # runs from live/, alongside .runner.pid and logs/).
 POSITIONS_STATE_PATH = os.environ.get("BTC_IMPLIED_PROB_POSITIONS_STATE_PATH", "positions_state.json")
+
+# Series never traded, even when discovery finds them (e.g. "KXBTC15M,KXBTCD").
+# Added 2026-09-26 for sharing the Kalshi account with resolution_alpha, which
+# trades KXBTC15M/KXBTCD/KXETH15M/KXETHD: Kalshi nets positions per account, so
+# two runners on one ticker can redeem each other's legs early, and this
+# strategy's resting take-profit orders can make resolution_alpha's IOC orders
+# cancel under self-trade prevention (../resolution_alpha/live/
+# SIM_BANKROLL_PLAN.md, Phase 3 items 3-4). Empty by default.
+EXCLUDE_SERIES = _tuple_env("BTC_IMPLIED_PROB_EXCLUDE_SERIES", ())
+
+# --- Per-runner bankroll (added 2026-09-26) ---
+#
+# Same ledger as resolution_alpha (../shared/sim_bankroll.py), fed by
+# ../shared/tagged_ledger.py because this strategy's orders are GTC and can
+# fill after the POST returns. With SIM_BANKROLL_ENABLED (the default) and a
+# live run, the ledger tracks this runner's own cash and positions and checks
+# them against the real balance every SIM_BANKROLL_SYNC_SECONDS in a
+# background thread; shadow only until SIZE_FROM_SIM_BANKROLL is on, which
+# sizes off (and refuses orders beyond) the ledger's available cash. To trade
+# beside resolution_alpha on one account: SIZE_FROM_SIM_BANKROLL=true,
+# SIM_BANKROLL_SHARED_ACCOUNT=true and a fixed SIM_BANKROLL_ALLOCATION_DOLLARS,
+# the same way resolution_alpha is set up. See
+# ../resolution_alpha/live/SIM_BANKROLL_PLAN.md ("Running the other two
+# experiments beside resolution_alpha").
+SIM_BANKROLL_ENABLED = _bool_env("BTC_IMPLIED_PROB_SIM_BANKROLL_ENABLED", True)
+SIM_BANKROLL_ALLOCATION_DOLLARS = _float_env("BTC_IMPLIED_PROB_SIM_BANKROLL_ALLOCATION_DOLLARS", 0.0)
+SIM_BANKROLL_ALLOCATION_FRACTION = _float_env("BTC_IMPLIED_PROB_SIM_BANKROLL_ALLOCATION_FRACTION", 1.0)
+SIM_BANKROLL_TOLERANCE_DOLLARS = _float_env("BTC_IMPLIED_PROB_SIM_BANKROLL_TOLERANCE_DOLLARS", 0.01)
+SIM_BANKROLL_SYNC_SECONDS = _float_env("BTC_IMPLIED_PROB_SIM_BANKROLL_SYNC_SECONDS", 15.0)
+SIZE_FROM_SIM_BANKROLL = _bool_env("BTC_IMPLIED_PROB_SIZE_FROM_SIM_BANKROLL", False)
+# Prefixes every order's client_order_id ("bip-<y|n>-<hex>"). Must be unique
+# per runner on the account (resolution_alpha is "ra"), 1-5 chars, no "-".
+ORDER_TAG = _str_env("BTC_IMPLIED_PROB_ORDER_TAG", "bip")
+SIM_BANKROLL_SHARED_ACCOUNT = _bool_env("BTC_IMPLIED_PROB_SIM_BANKROLL_SHARED_ACCOUNT", False)
+# Shared mode only: set for ONE restart to start a fresh allocation after this
+# runner's status file was lost (it otherwise refuses to trade). Unset after.
+SIM_BANKROLL_ALLOW_FRESH_ALLOCATION = _bool_env("BTC_IMPLIED_PROB_SIM_BANKROLL_ALLOW_FRESH_ALLOCATION", False)
+
+# The ledger's status file (sim_bankroll.json, read by
+# ../resolution_alpha/account_reconciler.py --ledger) and divergence log.
+# Absolute, unlike POSITIONS_STATE_PATH: every runner needs its own.
+LOG_DIR = os.environ.get("BTC_IMPLIED_PROB_LOG_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "live", "logs"))
+SIM_BANKROLL_STATUS_PATH = os.path.join(LOG_DIR, "sim_bankroll.json")
+SIM_BANKROLL_DIVERGENCE_LOG_PATH = os.path.join(LOG_DIR, "sim_bankroll_divergences.jsonl")

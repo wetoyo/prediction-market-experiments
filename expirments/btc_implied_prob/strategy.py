@@ -50,7 +50,7 @@ import deribit_iv
 import fees
 import positions_store
 from kalshi_btc_markets import ActiveMarket, find_active_btc_markets
-from order_manager import OrderManager
+from order_manager import OrderManager, OrderRefused
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("btc_implied_prob.strategy")
@@ -313,12 +313,15 @@ def _execute(signals: list[TradeSignal], open_positions: dict, manager: OrderMan
             )
             continue
 
-        manager.buy_favored_side(
-            ticker=s.market.ticker,
-            side=s.favored_side,
-            contracts=contracts,
-            limit_price=s.trade_price,
-        )
+        try:
+            manager.buy_favored_side(
+                ticker=s.market.ticker,
+                side=s.favored_side,
+                contracts=contracts,
+                limit_price=s.trade_price,
+            )
+        except OrderRefused:
+            continue  # over this runner's ledger cash; logged by order_manager, nothing placed
 
         position = {
             "market": s.market, "side": s.favored_side,
@@ -497,6 +500,10 @@ def main() -> None:
     args = parser.parse_args()
 
     manager = OrderManager()
+    if args.execute and not manager.dry_run:
+        # Per-runner ledger (config.py, "Per-runner bankroll"): first sync now,
+        # before the reconciliation and the first order, then in the background.
+        manager.start_ledger()
     # Loaded regardless of --execute (harmless if empty/absent in dry-run) so a restart
     # doesn't forget positions a previous --execute run already registered. See
     # positions_store's module docstring for the incident this is a response to.
@@ -510,6 +517,8 @@ def main() -> None:
             markets: list = []
         else:
             markets = find_active_btc_markets()
+        if config.EXCLUDE_SERIES:
+            markets = [m for m in markets if m.series_ticker.upper() not in config.EXCLUDE_SERIES]
         markets_by_ticker = {m.ticker: m for m in markets}
 
         if args.execute and not reconciled:

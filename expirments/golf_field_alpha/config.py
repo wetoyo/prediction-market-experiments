@@ -151,3 +151,40 @@ DRY_RUN_SIMULATED_BALANCE_DOLLARS = _float_env("GOLF_FIELD_ALPHA_DRY_RUN_BALANCE
 # same legs every tick. Relative path resolves against the process's run
 # dir (live/start_live.* runs from live/).
 POSITIONS_STATE_PATH = os.environ.get("GOLF_FIELD_ALPHA_POSITIONS_STATE_PATH", "positions_state.json")
+
+# --- Per-runner bankroll (added 2026-09-26) ---
+#
+# Same ledger as resolution_alpha (../shared/sim_bankroll.py), fed by
+# ../shared/tagged_ledger.py because this strategy's orders are GTC: a leg
+# that only partly fills rests on a thin golf book and can fill days later.
+# With SIM_BANKROLL_ENABLED (the default) and a live run, the ledger tracks
+# this runner's own cash and positions and checks them against the real
+# balance every SIM_BANKROLL_SYNC_SECONDS in a background thread; shadow only
+# until SIZE_FROM_SIM_BANKROLL is on, which sizes baskets off (and refuses a
+# basket that won't fit in) the ledger's available cash. To trade beside
+# resolution_alpha on one account: SIZE_FROM_SIM_BANKROLL=true,
+# SIM_BANKROLL_SHARED_ACCOUNT=true and a fixed SIM_BANKROLL_ALLOCATION_DOLLARS.
+# See ../resolution_alpha/live/SIM_BANKROLL_PLAN.md ("Running the other two
+# experiments beside resolution_alpha").
+SIM_BANKROLL_ENABLED = _bool_env("GOLF_FIELD_ALPHA_SIM_BANKROLL_ENABLED", True)
+SIM_BANKROLL_ALLOCATION_DOLLARS = _float_env("GOLF_FIELD_ALPHA_SIM_BANKROLL_ALLOCATION_DOLLARS", 0.0)
+SIM_BANKROLL_ALLOCATION_FRACTION = _float_env("GOLF_FIELD_ALPHA_SIM_BANKROLL_ALLOCATION_FRACTION", 1.0)
+SIM_BANKROLL_TOLERANCE_DOLLARS = _float_env("GOLF_FIELD_ALPHA_SIM_BANKROLL_TOLERANCE_DOLLARS", 0.01)
+SIM_BANKROLL_SYNC_SECONDS = _float_env("GOLF_FIELD_ALPHA_SIM_BANKROLL_SYNC_SECONDS", 15.0)
+SIZE_FROM_SIM_BANKROLL = _bool_env("GOLF_FIELD_ALPHA_SIZE_FROM_SIM_BANKROLL", False)
+# Prefixes every order's client_order_id ("gfa-<y|n>-<hex>"). Must be unique
+# per runner on the account (resolution_alpha is "ra"), 1-5 chars, no "-".
+ORDER_TAG = _str_env("GOLF_FIELD_ALPHA_ORDER_TAG", "gfa")
+SIM_BANKROLL_SHARED_ACCOUNT = _bool_env("GOLF_FIELD_ALPHA_SIM_BANKROLL_SHARED_ACCOUNT", False)
+# Shared mode only: set for ONE restart to start a fresh allocation after this
+# runner's status file was lost (it otherwise refuses to trade). Unset after.
+SIM_BANKROLL_ALLOW_FRESH_ALLOCATION = _bool_env("GOLF_FIELD_ALPHA_SIM_BANKROLL_ALLOW_FRESH_ALLOCATION", False)
+
+# The ledger's status file (sim_bankroll.json, read by
+# ../resolution_alpha/account_reconciler.py --ledger) and divergence log.
+# Absolute, unlike POSITIONS_STATE_PATH: every runner needs its own.
+LOG_DIR = os.environ.get(
+    "GOLF_FIELD_ALPHA_LOG_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "live", "logs")
+)
+SIM_BANKROLL_STATUS_PATH = os.path.join(LOG_DIR, "sim_bankroll.json")
+SIM_BANKROLL_DIVERGENCE_LOG_PATH = os.path.join(LOG_DIR, "sim_bankroll_divergences.jsonl")

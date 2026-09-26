@@ -2,3 +2,4 @@ logs/*.log
 logs/old/
 .runner.pid
 .env
+logs/sim_bankroll*

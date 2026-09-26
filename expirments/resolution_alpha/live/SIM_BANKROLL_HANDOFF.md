@@ -1,8 +1,6 @@
 # Handoff: per-runner bankroll (resolution_alpha), Phases 1–3
 
-**Last updated:** 2026-09-26 14:40 EDT, by a Claude Code session. Steps 1 and 2 of "Start here" are
-done: tag accepted, ledger healthy (see the results log). Step 3, the `2fb9c95` restart, is waiting on
-the owner.
+**Last updated:** 2026-09-26 ~15:10 EDT, by a Claude Code session.
 **Owner:** wetoyo. **Rollout plan and design:** `live/SIM_BANKROLL_PLAN.md`. Read it for the *why*;
 this file covers *where things stand and what to do next*.
 
@@ -10,35 +8,34 @@ this file covers *where things stand and what to do next*.
 
 ## Start here (next session)
 
-**Do these three things, in order. None needs a restart.**
-
-1. **Did Kalshi accept the tagged order IDs?** This is the only unverified item left from the payload
-   caveat, and the one that could quietly stop trading. As of 01:48 no order had been placed since the
-   01:24 restart. Check overnight:
+1. **Were the new-format order IDs (`ra-<y|n>-<28 hex>`) accepted?** The owner restarted the service
+   onto `2fb9c95` at **14:37:48 EDT** (PID **45269**); the ledger re-initialized at $5.2971 with
+   sizing on. No order had been placed since, as of ~15:05. Check:
 
    ```
    ssh wetoyo@100.109.148.56
-   journalctl -u resolution-alpha.service --since '2026-09-26 01:24' --no-pager      | grep -v 'eval summary' | grep -E 'LIVE ORDER|entry filled|HTTPError|invalid|400|ERROR|Traceback'
+   journalctl -u resolution-alpha.service --since '2026-09-26 14:37' --no-pager | grep -v 'eval summary' | grep -E 'LIVE ORDER|entry filled|0 filled|HTTPError|invalid|400|ERROR|Traceback'
+   cd ~/prediction-market-experiments/expirments/resolution_alpha && ../../.venv/bin/python inspect_order_records.py   # expect 'ra-<y|n>-<hex>' shapes
    ```
 
-   - `LIVE ORDER` followed by `entry filled` (or an IOC partial / 0-fill with **no** HTTP error): the tag
-     is **accepted**. Record it in the results log and the plan's "Still open" list, and the caveat is closed.
-   - `LIVE ORDER` followed by an HTTP 400 / `invalid`: the tag is **rejected**, and the runner has been
-     unable to enter all night. Tell the owner first thing. The fix: pass no `client_order_id`, so
-     `live_execution.place_order` falls back to a bare `uuid4()`, then restart with the owner's OK. See
-     the "Orders rejected" bullet in the caveat section below.
-   - No `LIVE ORDER` at all overnight, despite `in_window` in the eval summaries: that's unusual
-     (Phase 1 averaged ~22 trades/day). Look at the eval-summary reject reasons, and check
-     `no_bankroll=` in particular: a nonzero count means Phase 2 ledger sizing is returning $0.
-
-2. **Ledger health:** `cat ~/prediction-market-experiments/expirments/resolution_alpha/live/logs/sim_bankroll.json`.
-   Expect `divergence_count` 0, `last_check.status` `ok`, and no `sim_bankroll_divergences.jsonl`.
-   At 01:48 it was 0 divergences, status `ok`, gap $0.0, 88 checks, 0 inconclusive. Add a row to the
-   results log at the bottom.
-
-3. **Ask the owner about restarting onto `2fb9c95`** once (1) passes. The disk already has it; only the
-   running process is older. After the restart, re-run the check in (1), because the ID format changes
-   to `ra-<y|n>-<28 hex>`.
+   Fills and no 400s mean it's accepted: add a results-log row. A 400 / `invalid` means rejected, so
+   tell the owner right away (fix: see the caveat section's "Orders rejected" bullet). The earlier
+   `ra-<32 hex>` format was verified at 14:35 (40 orders, 23 fills, 0 errors).
+2. **Ledger health**, same as before: `live/logs/sim_bankroll.json` shows `divergence_count` 0 and
+   `last_check.status` `ok`, and there's no divergences jsonl.
+3. **The other two experiments can now share the account (code only, nothing running).** On
+   2026-09-26 afternoon `sim_bankroll.py` moved to `expirments/shared/`, and btc_implied_prob and
+   golf_field_alpha got the same ledger through `shared/tagged_ledger.py`. See the plan's "Running
+   the other two experiments beside resolution_alpha": what's built, config, go-live steps, hazards.
+   Owner decisions pending before any of it runs live:
+   - the allocations (the account is ~$5.30);
+   - whether btc_implied_prob gets `EXCLUDE_SERIES=KXBTC15M,KXBTCD` to stay off resolution_alpha's
+     tickers;
+   - when to put resolution_alpha itself into shared mode (restart, while flat).
+   **Deploy note:** resolution_alpha's `order_manager.py` now imports `sim_bankroll` from
+   `../shared/`. That's a no-op for the running process, but the Pi needs the new `expirments/shared/`
+   directory (a normal `git merge --ff-only`) before its **next** restart, or the service fails at
+   import.
 
 After that, continue with "Next steps" below from step 3 (watch Phase 2, then try a fixed dollar
 allocation).
@@ -70,12 +67,12 @@ allocation).
 
 | | |
 |---|---|
-| Pi service | `resolution-alpha.service`, PID **41866**, restarted by the owner **2026-09-26 01:24:39 EDT** |
-| Code the process runs | **`f16bb50`** (Phase 3 groundwork). The disk has `2fb9c95` and later (via `main`), which isn't running yet. |
+| Pi service | `resolution-alpha.service`, PID **45269**, restarted by the owner **2026-09-26 14:37:48 EDT** (before that PID 41866 from 01:24:39) |
+| Code the process runs | **`24e28af`** (`main`; includes `2fb9c95`, shared-mode restart safety, and the `ra-<y|n>-<28 hex>` ID format). |
 | Git | **`main`** in both the dev repo and the Pi's checkout. The old `resolution-alpha-no-kalshi-state` branch is history. |
 | `live/.env` | `RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL=true`. Shared-account mode is **not** set (off). |
-| Effect | **Phase 2 is live: the runner sizes off its ledger** (`initialized (SIZING off it)` at 01:24:44). Allocation fraction 1.0, so sizing should equal the real balance. Orders carry `client_order_id = "ra-<32 hex>"`. |
-| Ledger at handoff | sim $3.3313 == real $3.3313. 0 divergences. No trades since the restart yet (as of 01:48). |
+| Effect | **Phase 2 is live: the runner sizes off its ledger** (`initialized (SIZING off it)` at 14:37:55). Allocation fraction 1.0, so sizing should equal the real balance. Orders carry `client_order_id = "ra-<y|n>-<28 hex>"`. |
+| Ledger at handoff | sim $5.2971 == real $5.2971 at the 14:37 re-initialize. The previous run (01:24-14:37) ended with 0 divergences over 2950 checks. |
 | Dev checkout | `D:/Files/Code/prediction-market-experiments` on `main`. `D:/Files/Code/pme-ra-branch` is retired. |
 
 ### Commits from the previous session
@@ -155,9 +152,8 @@ and the mirror-image gap at settlement briefly under-sizes.
 ## Next steps, in order
 
 1. ~~**Clear the caveat above.**~~ **Done 2026-09-26 14:35**: fields and tag acceptance both verified.
-2. **Restart onto `2fb9c95`** when the owner OKs it (`sudo systemctl restart
-   resolution-alpha.service`). Afterwards, check that the new-format order IDs are accepted, using
-   the same journal grep.
+2. ~~**Restart onto `2fb9c95`**~~. **Done 2026-09-26 14:37:48** (owner). The new-format ID check is
+   "Start here" (1).
 3. **Watch Phase 2** for a few days: `divergence_count` stays 0, and sizing looks the same as
    before. Then try a fixed `RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_DOLLARS` below the balance
    (the plan's Phase 2 last step).
@@ -188,7 +184,7 @@ and the mirror-image gap at settlement briefly under-sizes.
 
 | What | Where (under `expirments/resolution_alpha/`) |
 |---|---|
-| Ledger logic (pure, no network) | `sim_bankroll.py`: `SimulatedBankroll` (`record_fill`, `apply_exact_cost`, `apply_settlement`, `check`, `sizing_cash`, `resume`, `_book_order_record`, `snapshot`) |
+| Ledger logic (pure, no network) | `../shared/sim_bankroll.py` (moved 2026-09-26): `SimulatedBankroll` (`record_fill`, `apply_exact_cost`, `apply_settlement`, `check`, `sizing_cash`, `resume`, `_book_order_record`, `snapshot`) |
 | Wiring | `order_manager.py`: `buy_favored_side` (tagging + `record_fill`), `get_balance_dollars` (sizing), `sync_sim_bankroll` / `_initialize_sim` (resume, recovery, fail-closed guard), `_status_file_taken` |
 | Runner hook | `runner.py`, bankroll-refresh block: starts the sync in the background after each good balance poll. The per-fill `bankroll -= cost` is **intentionally kept** (see the plan, Phase 2). |
 | Account reconciler | `account_reconciler.py`: pure `AccountReconciler.check` + `attribute`; CLI loop |
@@ -343,4 +339,5 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 | 2026-09-26 01:40 EDT | 16 min since the Phase 2 restart (PID 41866) / 0 new trades | 0 | 0 | 0 / few | 0 | Payload caveat: fields ✅, `min_ts` ✅, reconciler smoke test `ok` (gap $0.0000). Tag acceptance still pending (no orders since the restart). Same session: branch merged into `main` (`3f49dad`) after reverting `6598821` (`5facfbf`); submodule `bb616f4`. |
 | 2026-09-26 01:48 EDT | 24 min since the Phase 2 restart / 0 new trades | 0 | 0 (file absent) | 0 / 88 | 0 | Owner went to sleep. Still no order since the restart, so tag acceptance is unconfirmed. Next session: see "Start here". |
 | 2026-09-26 14:35 EDT | 13h 11m since the Phase 2 restart (PID 41866) / 23 entry fills, all settled (no open positions) | 0 | 0 (file absent) | 0 / 2950 | 0 | **Tag accepted:** 40 `LIVE ORDER`s (all `ra-<hex>`, per `inspect_order_records.py`), 23 `entry filled`, the rest IOC 0-fills ("no marketable depth"), **0 HTTPError**. Ledger $5.2971 == real $5.2971 (up from $3.3313), gap ~1e-15, `fill_seq` 23. Phase 2 sizing is working: 1-4 contracts per order, `no_bankroll=0` in all 132 eval summaries. Only ERRORs: 2 ws keepalive-ping disconnects (03:11, 13:58), both auto-reconnected. |
+| 2026-09-26 14:38 EDT | Restart onto `24e28af` (incl. `2fb9c95`) at 14:37:48, PID 45269 | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $5.2971 of real $5.2971, adopted 0 of 0`. New ID format `ra-<y|n>-<28 hex>` not yet exercised (no order by ~15:05). |
 | | | | | | | |
