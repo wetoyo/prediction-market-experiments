@@ -205,15 +205,17 @@ change is the order tag in `client_order_id`.
   correction (`instance_id`, id, delta) into that runner's log dir, and the runner applies it once
   at its next sync. Only do this after `attribute()` has been checked against real payloads (next
   item).
-- **Unverified:** that `GET /portfolio/orders` records carry `client_order_id` and `ticker`, and
-  that the list honours `min_ts`. If it doesn't, results are deduped and capped at 10 pages of 200.
-  Restart recovery (steps 3 and 4 above) needs the first two. `client_order_id` is a
-  documented field, but this account's order payloads haven't been inspected for it. Attribution
-  depends on it; the summed check doesn't. It's also unverified that Kalshi accepts a tagged
-  `client_order_id`, but the format is the same character set and length as the uuid it replaces.
-- **The other experiments.** `btc_implied_prob` and `golf_field_alpha` on this branch predate the
-  ledger (they still read the cents `balance` field). Each needs `sim_bankroll` and this wiring before
-  it trades beside resolution_alpha. The main sync is a prerequisite.
+- **Verified 2026-09-26 (`inspect_order_records.py` on the Pi):** all 200 `GET /portfolio/orders`
+  records carry `client_order_id`, `ticker`, `order_id`, `fill_count_fp` and all four exact-cost
+  fields, and the list honours `min_ts` (1h window: 3 of 200). Restart recovery and attribution can
+  rely on them. The reconciler's smoke test against the live ledger came back `ok`, gap $0.0000.
+  **Still unverified:** that Kalshi *accepts* a tagged `client_order_id`. No order had been placed
+  since the tagging restart when this was checked. The first `LIVE ORDER` line followed by
+  `entry filled` (not a 400) settles it; see the handoff's results log.
+- **The other experiments.** `btc_implied_prob` and `golf_field_alpha` predate the ledger (they
+  still read the cents `balance` field). Each needs `sim_bankroll` and this wiring before it trades
+  beside resolution_alpha. The main sync they were waiting on is done (2026-09-26), so this work can
+  now start from `main`.
 - Items 3 to 6 below still apply as written.
 
 ### Original design notes
@@ -250,30 +252,37 @@ change is the order tag in `client_order_id`.
 6. **Shards.** Collateral is per `exchange_index`. Allocations are in dollars across the whole account,
    so the per-shard guard (`get_shard_balances`) still has to run against the real account.
 
-## Syncing this branch with `main`
+## Syncing this branch with `main` (done 2026-09-26)
 
-State as of 2026-09-22:
+`main` now carries everything on this branch. From here on, work on `main`; the
+`resolution-alpha-no-kalshi-state` branch stays on `origin` for history.
 
-- `main` has `6598821`, which routes all three experiments through `KalshiStateManager`. This branch
-  deliberately doesn't have it.
-- `main` also has two README doc commits (`c6bb2f1`, `22fd3a7`).
-- `6a01b71` on main and `5d5d33c` on this branch are the same Kelly-cap-freeze fix.
-- This branch adds the live Pi batch (`5670109`) and this shadow ledger.
+What was done:
 
-A trial merge of this branch into `main` conflicts only in `runner.py`, in two hunks, both where main's
-per-ticker `market_kelly_caps` meets this branch's group-shared `kelly_group_caps`. Take this branch's
-side for both, since it's the newer fix.
+1. `6598821` (the `KalshiStateManager` order-path routing in all three experiments, plus the
+   `CAPITAL_FRACTION`/`CAPITAL_CAP_DOLLARS` config) was reverted on `main` (`5facfbf`). Nothing
+   else used `kalshi_state.py`, so the submodule dropped it too. The submodule also got the Pi's
+   keep-alive `requests.Session` in `fetch_historical.py` as a real commit, so its tree is
+   `dd89744` plus that one change (`bb616f4`).
+2. The branch was merged (`3f49dad`). Both `runner.py` Kelly hunks took the branch side. A stray
+   `market_kelly_caps.setdefault(...)` from main's copy of the freeze fix was dropped, since it
+   would NameError after a fill. The three experiments' code on `main` is byte-identical to the
+   branch.
+3. The dev checkout's stale uncommitted copies of `5670109` were stashed, not deleted (`git stash
+   list` in the dev repo). So was the abandoned WAL rework of `kalshi_state.py` inside the
+   submodule. Backup ref: `backup/main-pre-ra-sync-20260926`.
+4. `reconstruct_trade_history.py` was only ever an untracked file. It's now committed on `main`.
 
-Steps:
+The Pi's code is the same whether it's on the branch tip or `main`: the only differences are docs,
+`reconstruct_trade_history.py`, and the submodule's keep-alive, which the Pi already had
+uncommitted. Moving its checkout is a disk-only change and needs no restart:
 
-1. On `main`, revert `6598821`'s order-path routing: `order_manager.py` in all three experiments, and
-   the `CAPITAL_FRACTION`/`CAPITAL_CAP_DOLLARS` config. The per-runner allocation above replaces it.
-   Keep `kalshi_state.py` in the submodule only if something off the order path still uses it.
-2. Merge this branch into `main` and resolve the `runner.py` hunks to this branch's side.
-3. The dev working tree on `main` has uncommitted copies of most of `5670109`. Discard them after the
-   merge. They're a subset of the commit, which also has the bankroll-refresh fix they lack.
-4. The submodule: the Pi has an uncommitted keep-alive `requests.Session` change in
-   `prediction_market_scraper/Clients/Kalshi/fetch_historical.py`. Commit it in the submodule repo,
-   then bump the pointer here. main's pointer (`5388705`) and this branch's (`dd89744`) differ only by
-   the `kalshi_state` work.
-5. Point the Pi at `main` only after step 1 is merged. Until then it stays on this branch.
+```
+cd ~/prediction-market-experiments
+git status && git -C prediction_market_scraper status --short   # expect only the keep-alive M
+git fetch origin && git -C prediction_market_scraper fetch origin
+git diff --stat HEAD origin/main -- expirments                    # expect docs + reconstruct script only
+git -C prediction_market_scraper diff bb616f4 -- Clients/Kalshi/fetch_historical.py   # expect empty
+git -C prediction_market_scraper checkout -- Clients/Kalshi/fetch_historical.py
+git checkout main && git merge --ff-only origin/main && git submodule update --init
+```

@@ -1,6 +1,6 @@
 # Handoff: per-runner bankroll (resolution_alpha), Phases 1–3
 
-**Last updated:** 2026-09-26 01:40 EDT, by a Claude Code session, for whoever picks this up next.
+**Last updated:** 2026-09-26 ~02:00 EDT, by a Claude Code session, for whoever picks this up next.
 **Owner:** wetoyo. **Rollout plan and design:** `live/SIM_BANKROLL_PLAN.md`. Read it for the *why*;
 this file covers *where things stand and what to do next*.
 
@@ -12,11 +12,11 @@ this file covers *where things stand and what to do next*.
 |---|---|
 | Pi service | `resolution-alpha.service`, PID **41866**, restarted by the owner **2026-09-26 01:24:39 EDT** |
 | Code the process runs | **`f16bb50`** (Phase 3 groundwork). The disk has `2fb9c95`, which isn't running (see below). |
-| Branch | `resolution-alpha-no-kalshi-state` (**not `main`**), pushed to origin |
+| Branch | **`main`** since 2026-09-26: `resolution-alpha-no-kalshi-state` was merged in (`3f49dad`) and `kalshi_state` reverted. The Pi's checkout is still on the branch tip `f9efcfb`, but the code is identical; see the plan's "Syncing" section to move it. |
 | `live/.env` | `RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL=true`. Shared-account mode is **not** set (off). |
 | Effect | **Phase 2 is live: the runner sizes off its ledger** (`initialized (SIZING off it)` at 01:24:44). Allocation fraction 1.0, so sizing should equal the real balance. Orders carry `client_order_id = "ra-<32 hex>"`. |
 | Ledger at handoff | sim $3.3313 == real $3.3313. 0 divergences. No trades since the restart yet (as of 01:35). |
-| Dev worktree | `D:/Files/Code/pme-ra-branch` has the branch checked out, with the submodule initialized. The main checkout at `D:/Files/Code/prediction-market-experiments` is on `main`, with unrelated uncommitted work. **Don't commit this branch's work there.** |
+| Dev worktree | Work in the main checkout (`D:/Files/Code/prediction-market-experiments`, on `main`). `D:/Files/Code/pme-ra-branch` (the old branch worktree) is retired. |
 
 ### Commits this session (all on the branch, all pushed)
 
@@ -33,7 +33,9 @@ decides when.
 
 ---
 
-## ⚠ Open caveat: unverified Kalshi payload fields (do this first)
+## Open caveat: Kalshi payload fields (mostly verified 2026-09-26; one item left)
+
+**Result (2026-09-26 01:40 EDT):** `inspect_order_records.py` shows all 200 order records carry `client_order_id`, `ticker`, `order_id`, `fill_count_fp` and all four exact-cost fields, and `min_ts` is honoured. `account_reconciler.py --count 2` came back `ok`, gap $0.0000. So rows 1–3 of the table below are **verified**. Row 4 (Kalshi *accepts* the tag) is still open: no order had been placed since the 01:24 restart (the last order was 00:59, untagged). Check 1 below settles it on the first trade. The original caveat text follows for reference.
 
 Several Phase 3 features read **`GET /portfolio/orders`** list records, and nobody has looked at a
 real one on this account yet. The earlier session's attempt was blocked by the auto-mode classifier.
@@ -89,8 +91,8 @@ and the mirror-image gap at settlement briefly under-sizes.
 
 ## Next steps, in order
 
-1. **Clear the caveat above.** Then record the outcome in the results log at the bottom of this
-   file.
+1. **Clear the caveat above.** Fields are verified. Still needed: confirm the first tagged order is
+   accepted, then record it in the results log at the bottom of this file.
 2. **Restart onto `2fb9c95`** when the owner OKs it (`sudo systemctl restart
    resolution-alpha.service`). Afterwards, check that the new-format order IDs are accepted, using
    the same journal grep.
@@ -99,8 +101,8 @@ and the mirror-image gap at settlement briefly under-sizes.
    (the plan's Phase 2 last step).
 4. **Optionally, run the reconciler continuously.** The systemd unit sketch is in the plan's
    Phase 3 section. It isn't installed. With one runner it duplicates the runner's own check.
-5. **Sync the branch into `main`** (plan: "Syncing this branch with main"). This is a prerequisite
-   for getting the other experiments onto per-runner ledgers.
+5. ~~**Sync the branch into `main`**~~. **Done 2026-09-26** (plan: "Syncing this branch with main"). The
+   Pi's checkout can move to `main` whenever (disk-only, same code).
 6. **Remaining Phase 3 work** (plan's "Still open"):
    - cross-process ledger correction from the reconciler (after attribution is verified);
    - porting `sim_bankroll` + wiring to `btc_implied_prob` / `golf_field_alpha`, which are stale
@@ -276,4 +278,5 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 | 2026-09-22 23:07 EDT | 11 min / 1 settled | 0 | 0 | 0 / 43 | 0 | Restarted 22:56:21 onto `c50cb90` (PID 27128). Initialized at $4.3086. First trade: 1 YES KXBTCD-26SEP2223-T86499.99 @0.94 + $0.004 fee, settled YES. Ledger $4.3646 == real $4.3646, gap $0.0000. |
 | 2026-09-26 01:05 EDT | 3d 2h (same PID 27128) / 69 markets entered, all settled (70 entry fills) | 0 | 0 (file absent) | 0 / 16538 | 3 triggered, **0 filled** | Ledger $3.3313 == real $3.3313. No `suspect` lines, no `could not fetch exact cost`, no sync exceptions. Balance swings tracked exactly, including the -$2.69 loss on KXBTC15M-26SEP252000-00 (Sep 25 ~20:00). The 3 exit triggers (Sep 24 15:14 KXETH15M, Sep 25 13:59 KXETHD, Sep 25 19:59 KXBTC15M) each filled 0 contracts, so pair-redemption timing is **still unverified**. 0 inconclusive is expected: the exact-cost fetch runs in the same sync, before the check, so a check is only inconclusive when a fill races the balance snapshot. **Not a pass yet:** needs 100+ settled trades (~1.5 more days at ~22/day) and one exit that actually fills. |
 | 2026-09-26 01:35 EDT | Phase 2 restart at 01:24:39 (PID 41866, `f16bb50`, sizing ON) | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $3.3313 of real $3.3313, adopted 0 of 0`. No orders yet since the restart, so tagged-ID acceptance is still unconfirmed (see the caveat). |
+| 2026-09-26 01:40 EDT | 16 min since the Phase 2 restart (PID 41866) / 0 new trades | 0 | 0 | 0 / few | 0 | Payload caveat: fields ✅, `min_ts` ✅, reconciler smoke test `ok` (gap $0.0000). Tag acceptance still pending (no orders since the restart). Same session: branch merged into `main` (`3f49dad`) after reverting `6598821` (`5facfbf`); submodule `bb616f4`. |
 | | | | | | | |
