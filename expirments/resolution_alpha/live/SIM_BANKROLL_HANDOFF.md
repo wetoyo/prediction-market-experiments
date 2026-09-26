@@ -1,34 +1,92 @@
 # Handoff: per-runner bankroll (resolution_alpha), Phases 1–3
 
-**Last updated:** 2026-09-26 ~02:00 EDT, by a Claude Code session, for whoever picks this up next.
+**Last updated:** 2026-09-26 01:50 EDT, by a Claude Code session. The owner went to sleep right after.
 **Owner:** wetoyo. **Rollout plan and design:** `live/SIM_BANKROLL_PLAN.md`. Read it for the *why*;
 this file covers *where things stand and what to do next*.
 
 ---
+
+## Start here (next session)
+
+**Do these three things, in order. None needs a restart.**
+
+1. **Did Kalshi accept the tagged order IDs?** This is the only unverified item left from the payload
+   caveat, and the one that could quietly stop trading. As of 01:48 no order had been placed since the
+   01:24 restart. Check overnight:
+
+   ```
+   ssh wetoyo@100.109.148.56
+   journalctl -u resolution-alpha.service --since '2026-09-26 01:24' --no-pager      | grep -v 'eval summary' | grep -E 'LIVE ORDER|entry filled|HTTPError|invalid|400|ERROR|Traceback'
+   ```
+
+   - `LIVE ORDER` followed by `entry filled` (or an IOC partial / 0-fill with **no** HTTP error): the tag
+     is **accepted**. Record it in the results log and the plan's "Still open" list, and the caveat is closed.
+   - `LIVE ORDER` followed by an HTTP 400 / `invalid`: the tag is **rejected**, and the runner has been
+     unable to enter all night. Tell the owner first thing. The fix: pass no `client_order_id`, so
+     `live_execution.place_order` falls back to a bare `uuid4()`, then restart with the owner's OK. See
+     the "Orders rejected" bullet in the caveat section below.
+   - No `LIVE ORDER` at all overnight, despite `in_window` in the eval summaries: that's unusual
+     (Phase 1 averaged ~22 trades/day). Look at the eval-summary reject reasons, and check
+     `no_bankroll=` in particular: a nonzero count means Phase 2 ledger sizing is returning $0.
+
+2. **Ledger health:** `cat ~/prediction-market-experiments/expirments/resolution_alpha/live/logs/sim_bankroll.json`.
+   Expect `divergence_count` 0, `last_check.status` `ok`, and no `sim_bankroll_divergences.jsonl`.
+   At 01:48 it was 0 divergences, status `ok`, gap $0.0, 88 checks, 0 inconclusive. Add a row to the
+   results log at the bottom.
+
+3. **Ask the owner about restarting onto `2fb9c95`** once (1) passes. The disk already has it; only the
+   running process is older. After the restart, re-run the check in (1), because the ID format changes
+   to `ra-<y|n>-<28 hex>`.
+
+After that, continue with "Next steps" below from step 3 (watch Phase 2, then try a fixed dollar
+allocation).
+
+## What changed on 2026-09-26 (this session)
+
+- **The payload caveat is mostly cleared.** Every `GET /portfolio/orders` record carries
+  `client_order_id`, `ticker`, `order_id`, `fill_count_fp` and the exact-cost fields, and `min_ts` is
+  honoured. The `account_reconciler.py` smoke test returned `ok`, gap $0. Only tag *acceptance* is left
+  (step 1 above).
+- **The branch is merged into `main`, and `main` is the only line of work from now on.**
+  - `5facfbf` reverted `6598821` (the kalshi_state order routing) in all three experiments.
+  - The submodule dropped `kalshi_state.py` and committed the Pi's keep-alive Session (`bb616f4`).
+  - `3f49dad` is the merge: code is byte-identical to the branch; 105 tests pass.
+  - `9336bc5` updated the docs. Everything is pushed.
+- **The Pi's checkout is on `main` (`9336bc5`), not the branch.** The move was disk-only and changed
+  no code bytes (only docs and `reconstruct_trade_history.py`); there was no restart. To undo:
+  `git checkout resolution-alpha-no-kalshi-state`. Deploy from now on: commit and push `main` on a dev
+  machine, then on the Pi run `git fetch && git merge --ff-only origin/main && git submodule update`.
+- **Kept, not deleted, on the dev machine:**
+  - outer-repo `git stash` (main's stale uncommitted copies of `5670109`, plus an obsolete kalshi_state
+    README note);
+  - a submodule `git stash` (the abandoned WAL rework of `kalshi_state.py`);
+  - ref `backup/main-pre-ra-sync-20260926`.
+- Pi backup from the move: `prediction_market_scraper/Clients/Kalshi/fetch_historical.py.bak.20260926_*`
+  (identical to the committed file).
 
 ## TL;DR: what's running right now
 
 | | |
 |---|---|
 | Pi service | `resolution-alpha.service`, PID **41866**, restarted by the owner **2026-09-26 01:24:39 EDT** |
-| Code the process runs | **`f16bb50`** (Phase 3 groundwork). The disk has `2fb9c95`, which isn't running (see below). |
-| Branch | **`main`** since 2026-09-26: `resolution-alpha-no-kalshi-state` was merged in (`3f49dad`) and `kalshi_state` reverted. The Pi's checkout is still on the branch tip `f9efcfb`, but the code is identical; see the plan's "Syncing" section to move it. |
+| Code the process runs | **`f16bb50`** (Phase 3 groundwork). The disk has `2fb9c95` and later (via `main`), which isn't running yet. |
+| Git | **`main`** in both the dev repo and the Pi's checkout. The old `resolution-alpha-no-kalshi-state` branch is history. |
 | `live/.env` | `RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL=true`. Shared-account mode is **not** set (off). |
 | Effect | **Phase 2 is live: the runner sizes off its ledger** (`initialized (SIZING off it)` at 01:24:44). Allocation fraction 1.0, so sizing should equal the real balance. Orders carry `client_order_id = "ra-<32 hex>"`. |
-| Ledger at handoff | sim $3.3313 == real $3.3313. 0 divergences. No trades since the restart yet (as of 01:35). |
-| Dev worktree | Work in the main checkout (`D:/Files/Code/prediction-market-experiments`, on `main`). `D:/Files/Code/pme-ra-branch` (the old branch worktree) is retired. |
+| Ledger at handoff | sim $3.3313 == real $3.3313. 0 divergences. No trades since the restart yet (as of 01:48). |
+| Dev checkout | `D:/Files/Code/prediction-market-experiments` on `main`. `D:/Files/Code/pme-ra-branch` is retired. |
 
-### Commits this session (all on the branch, all pushed)
+### Commits from the previous session
 
 | Commit | What | Running? |
 |---|---|---|
 | `d846160` | Phase 2: `SIZE_FROM_SIM_BANKROLL` (sizing = `max(0, min(ledger cash, real))`) + this handoff | yes (flag on) |
 | `f16bb50` | Phase 3 groundwork: order tagging, `SIM_BANKROLL_SHARED_ACCOUNT` (off), `account_reconciler.py` | yes (tag only) |
 | `2fb9c95` | Shared-mode restart safety (resume recovers lost fills, fails closed on lost state, and more) | **no: needs a restart** |
-| (next) | `inspect_order_records.py` + this rewrite | n/a, docs/tooling |
+| `f9efcfb` | `inspect_order_records.py` + a handoff rewrite | n/a, docs/tooling |
 
 `2fb9c95` changes the order ID format to `"ra-<y|n>-<28 hex>"`. Otherwise it only touches shared
-mode, which is off. Restarting onto it is safe once the caveat below is checked, and the owner
+mode, which is off. Restarting onto it is safe once tag acceptance is confirmed, and the owner
 decides when.
 
 ---
@@ -102,11 +160,11 @@ and the mirror-image gap at settlement briefly under-sizes.
 4. **Optionally, run the reconciler continuously.** The systemd unit sketch is in the plan's
    Phase 3 section. It isn't installed. With one runner it duplicates the runner's own check.
 5. ~~**Sync the branch into `main`**~~. **Done 2026-09-26** (plan: "Syncing this branch with main"). The
-   Pi's checkout can move to `main` whenever (disk-only, same code).
+   Pi's checkout is on `main` too.
 6. **Remaining Phase 3 work** (plan's "Still open"):
    - cross-process ledger correction from the reconciler (after attribution is verified);
    - porting `sim_bankroll` + wiring to `btc_implied_prob` / `golf_field_alpha`, which are stale
-     on this branch.
+     (they predate the ledger).
 
 ### Before turning shared-account mode on (only when a second runner exists)
 
@@ -279,4 +337,5 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 | 2026-09-26 01:05 EDT | 3d 2h (same PID 27128) / 69 markets entered, all settled (70 entry fills) | 0 | 0 (file absent) | 0 / 16538 | 3 triggered, **0 filled** | Ledger $3.3313 == real $3.3313. No `suspect` lines, no `could not fetch exact cost`, no sync exceptions. Balance swings tracked exactly, including the -$2.69 loss on KXBTC15M-26SEP252000-00 (Sep 25 ~20:00). The 3 exit triggers (Sep 24 15:14 KXETH15M, Sep 25 13:59 KXETHD, Sep 25 19:59 KXBTC15M) each filled 0 contracts, so pair-redemption timing is **still unverified**. 0 inconclusive is expected: the exact-cost fetch runs in the same sync, before the check, so a check is only inconclusive when a fill races the balance snapshot. **Not a pass yet:** needs 100+ settled trades (~1.5 more days at ~22/day) and one exit that actually fills. |
 | 2026-09-26 01:35 EDT | Phase 2 restart at 01:24:39 (PID 41866, `f16bb50`, sizing ON) | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $3.3313 of real $3.3313, adopted 0 of 0`. No orders yet since the restart, so tagged-ID acceptance is still unconfirmed (see the caveat). |
 | 2026-09-26 01:40 EDT | 16 min since the Phase 2 restart (PID 41866) / 0 new trades | 0 | 0 | 0 / few | 0 | Payload caveat: fields ✅, `min_ts` ✅, reconciler smoke test `ok` (gap $0.0000). Tag acceptance still pending (no orders since the restart). Same session: branch merged into `main` (`3f49dad`) after reverting `6598821` (`5facfbf`); submodule `bb616f4`. |
+| 2026-09-26 01:48 EDT | 24 min since the Phase 2 restart / 0 new trades | 0 | 0 (file absent) | 0 / 88 | 0 | Owner went to sleep. Still no order since the restart, so tag acceptance is unconfirmed. Next session: see "Start here". |
 | | | | | | | |
