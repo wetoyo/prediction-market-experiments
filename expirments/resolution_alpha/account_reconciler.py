@@ -138,7 +138,7 @@ class AccountReconciler:
         base["ledger_cash"] = ledger_cash
         key = tuple((n, statuses[n].get("allocation_epoch")) for n in names)
         if key != self.baseline_key:
-            reason = "first check" if self.baseline_key is None else "ledger set or allocation changed"
+            reason = "first check" if self.baseline_key is None else self._describe_change(key)
             self._rebaseline(key, ledger_cash, real_balance, now)
             return ReconcileResult("rebaselined", reason=reason, expected_cash=ledger_cash, gap=0.0, **base)
 
@@ -166,6 +166,20 @@ class AccountReconciler:
         }
         self._rebaseline(key, ledger_cash, real_balance, now)
         return ReconcileResult("diverged", **base)
+
+    def _describe_change(self, key: tuple) -> str:
+        before, after = dict(self.baseline_key), dict(key)
+        changes = []
+        for name in sorted(set(before) | set(after)):
+            if name not in before:
+                changes.append(f"{name} joined")
+            elif name not in after:
+                changes.append(f"{name} left")
+            elif before[name] != after[name]:
+                # A restart that resumed keeps its epoch; a new one means the
+                # ledger started over and its P&L before this point is gone.
+                changes.append(f"{name} FRESHLY ALLOCATED (epoch {before[name]} -> {after[name]})")
+        return "; ".join(changes)
 
     def _rebaseline(self, key: tuple, ledger_cash: float, real_balance: float, now: float) -> None:
         self.baseline_key = key
@@ -202,6 +216,9 @@ def attribute(statuses: dict[str, dict], orders: list[dict], settlements: list[d
     - A settled ticker, with the ledgers holding it: a settlement one of
       them missed or double-applied.
     No gap in any of these points at a deposit or withdrawal.
+
+    Tags are the first '-'-separated field of client_order_id
+    ("<tag>-<y|n>-<hex>", see order_manager.buy_favored_side).
 
     NOTE: relies on GET /portfolio/orders records carrying `client_order_id`
     (a documented Order field, not yet seen on this account's own payloads)
@@ -338,7 +355,8 @@ def main(argv: list[str] | None = None) -> None:
                 with open(divergence_path, "a") as fh:
                     fh.write(json.dumps(event) + "\n")
             elif result.status in ("suspect", "rebaselined"):
-                logger.info("%s: %s gap=%s", result.status, result.reason or "", result.gap)
+                level = logging.WARNING if "FRESHLY ALLOCATED" in (result.reason or "") else logging.INFO
+                logger.log(level, "%s: %s gap=%s", result.status, result.reason or "", result.gap)
             if result.overlapping_tickers:
                 logger.warning("tickers held by more than one runner: %s", result.overlapping_tickers)
             _write_json(status_path, {**reconciler.snapshot(), "updated_ts": now, "last_check": asdict(result)})

@@ -124,6 +124,8 @@ class OrderManager:
     order_tag = config.ORDER_TAG
     _balance_snapshot: tuple[float, int] | None = None
     _checks_since_status_log = 0
+    _refusal_logged_at = 0.0
+    _collision_logged_at = 0.0
 
     def __init__(
         self,
@@ -146,6 +148,10 @@ class OrderManager:
         SIM_BANKROLL_SHARED_ACCOUNT)."""
         if not order_tag or "-" in order_tag:
             raise ValueError(f"ORDER_TAG {order_tag!r} must be non-empty with no '-' (it's split off at the first '-')")
+        if shared_account and not (allocation_dollars and allocation_dollars > 0):
+            # A fraction of the real balance at startup would include the
+            # other runners' cash.
+            raise ValueError("SIM_BANKROLL_SHARED_ACCOUNT needs a fixed SIM_BANKROLL_ALLOCATION_DOLLARS > 0")
         self.dry_run = dry_run
         self.order_tag = order_tag
         self._client = None
@@ -182,6 +188,10 @@ class OrderManager:
             return balance
         self._balance_snapshot = (balance, self._sim.fill_seq)
         if self._size_from_sim:
+            if self._shared_account and not self._sim.initialized:
+                # Not resumed yet (or refusing a fresh allocation): the real
+                # balance is other runners' money too -- don't trade.
+                return 0.0
             return self._sim.sizing_cash(balance)
         return balance
 
@@ -272,19 +282,26 @@ class OrderManager:
         sim = self._sim
         mode = "SIZING off it" if self._size_from_sim else "shadow only"
         if self._shared_account:
-            previous = self._read_previous_status()
+            previous, why_not = self._read_previous_status()
             if previous is not None:
-                cash = sim.resume(previous, real_balance, fill_seq_at_balance)
+                # Fills booked in memory after the last status write died
+                # with the old process; the account's order history has them.
+                since = float(previous.get("updated_ts") or 0.0) - 120
+                recovered = self._own_filled_orders(since)
+                cash = sim.resume(previous, real_balance, fill_seq_at_balance, recovered or [])
                 if cash is None:
                     return  # a fill raced the balance snapshot; retry on the next refresh
                 _log_despite_lightweight_mode(
-                    logging.INFO,
+                    logging.WARNING if sim.recovered_orders else logging.INFO,
                     "[sim-bankroll] resumed (%s, shared account, tag %r) from instance %s: sim $%.4f, "
-                    "%d open position(s), real account $%.4f",
-                    mode, self.order_tag, sim.resumed_from, cash, len(sim.positions), real_balance,
+                    "%d open position(s), %d fill(s) recovered from the order history, real account $%.4f",
+                    mode, self.order_tag, sim.resumed_from, cash, len(sim.positions), sim.recovered_orders,
+                    real_balance,
                 )
                 self._write_sim_status(None)
                 return
+            if not self._fresh_allocation_allowed(why_not):
+                return  # stays uninitialized: get_balance_dollars sizes 0
         adopted = {}
         account_positions = 0
         for row in self._client.get_positions().get("market_positions", []):
@@ -311,19 +328,109 @@ class OrderManager:
         )
         self._write_sim_status(None)
 
-    def _read_previous_status(self) -> dict | None:
-        """This runner's last status file, if it's a ledger to resume from
-        (initialized, and written under the same order tag)."""
+    def _read_previous_status(self) -> tuple[dict | None, str]:
+        """This runner's last status file if it's a ledger to resume from
+        (initialized, written under the same order tag), else (None, why)."""
         try:
             with open(config.SIM_BANKROLL_STATUS_PATH) as fh:
                 state = json.load(fh)
+        except FileNotFoundError:
+            return None, "is missing"
+        except (OSError, ValueError) as exc:
+            return None, f"is unreadable ({exc!r})"
+        if state.get("order_tag") != self.order_tag:
+            return None, f"belongs to tag {state.get('order_tag')!r}"
+        if not state.get("initialized") or "sim_cash" not in state:
+            return None, "holds no initialized ledger"
+        return state, ""
+
+    def _own_filled_orders(self, min_ts: float) -> list[tuple[dict, str]] | None:
+        """This runner's filled orders since `min_ts`, from the account's
+        order history: [(GET order record, outcome side)], recognised by
+        client_order_id "<tag>-<y|n>-<hex>" (buy_favored_side). None if the
+        order records carry no client_order_id at all (can't tell)."""
+        orders, cursor = [], None
+        for _ in range(10):
+            params = {"limit": 200, "min_ts": int(min_ts)}
+            if cursor:
+                params["cursor"] = cursor
+            page = self._client._request("GET", "/portfolio/orders", params=params)
+            orders.extend(page.get("orders", []))
+            cursor = page.get("cursor")
+            if not cursor:
+                break
+        if orders and not any("client_order_id" in o for o in orders):
+            logger.warning("[sim-bankroll] order records carry no client_order_id -- can't find this runner's fills")
+            return None
+        own = []
+        for order in orders:
+            parts = (order.get("client_order_id") or "").split("-", 2)
+            if len(parts) == 3 and parts[0] == self.order_tag and parts[1] in ("y", "n"):
+                if float(order.get("fill_count_fp") or 0.0) > 0:
+                    own.append((order, "yes" if parts[1] == "y" else "no"))
+        return own
+
+    def _fresh_allocation_allowed(self, why_not: str) -> bool:
+        """Shared account, nothing to resume from. A brand-new runner (no
+        fills under its tag lately) starts at its allocation. One whose
+        ledger state was lost must not: that would forget its P&L and every
+        position it holds. Fail closed until the operator says otherwise."""
+        if config.SIM_BANKROLL_ALLOW_FRESH_ALLOCATION:
+            logger.warning(
+                "[sim-bankroll] status file %s; starting a fresh allocation because "
+                "SIM_BANKROLL_ALLOW_FRESH_ALLOCATION is set -- unset it after this restart", why_not,
+            )
+            return True
+        own = self._own_filled_orders(time.time() - config.SIM_BANKROLL_FRESH_ALLOCATION_LOOKBACK_SECONDS)
+        if own is None:
+            logger.warning(
+                "[sim-bankroll] status file %s and the order history can't show whether tag %r traded before "
+                "-- starting a fresh allocation", why_not, self.order_tag,
+            )
+            return True
+        if not own:
+            return True
+        now = time.time()
+        if now - self._refusal_logged_at >= 900:
+            self._refusal_logged_at = now
+            _log_despite_lightweight_mode(
+                logging.ERROR,
+                "[sim-bankroll] NOT TRADING: status file %s (%s), but tag %r has %d filled order(s) in the last "
+                "%d days -- its ledger state is lost. Restore the status file, or set "
+                "RESOLUTION_ALPHA_SIM_BANKROLL_ALLOW_FRESH_ALLOCATION=true for one restart to start over.",
+                why_not, config.SIM_BANKROLL_STATUS_PATH, self.order_tag, len(own),
+                config.SIM_BANKROLL_FRESH_ALLOCATION_LOOKBACK_SECONDS // 86400,
+            )
+        return False
+
+    def _status_file_taken(self) -> bool:
+        """Shared account: another live runner is writing this status file
+        (two runners on one LOG_DIR). Overwriting it would destroy that
+        runner's resume state, so the caller doesn't."""
+        try:
+            with open(config.SIM_BANKROLL_STATUS_PATH) as fh:
+                existing = json.load(fh)
         except (OSError, ValueError):
-            return None
-        if not state.get("initialized") or state.get("order_tag") != self.order_tag or "sim_cash" not in state:
-            return None
-        return state
+            return False
+        owner = existing.get("instance_id")
+        if owner in (None, self._sim.instance_id, self._sim.resumed_from):
+            return False
+        if time.time() - float(existing.get("updated_ts") or 0.0) > 60:
+            return False  # a stale file from a stopped runner
+        now = time.time()
+        if now - self._collision_logged_at >= 900:
+            self._collision_logged_at = now
+            _log_despite_lightweight_mode(
+                logging.ERROR,
+                "[sim-bankroll] %s is being written by another runner (tag %r, instance %s) -- not overwriting it. "
+                "Every runner needs its own RESOLUTION_ALPHA_LOG_DIR.",
+                config.SIM_BANKROLL_STATUS_PATH, existing.get("order_tag"), owner,
+            )
+        return True
 
     def _write_sim_status(self, result) -> None:
+        if self._shared_account and self._status_file_taken():
+            return
         status = self._sim.snapshot()
         status["order_tag"] = self.order_tag
         status["shared_account"] = self._shared_account
@@ -415,9 +522,10 @@ class OrderManager:
         response = self._client.place_order(
             ticker=ticker, side=api_side, count=count_str, price=price_str,
             time_in_force=time_in_force, exchange_index=exchange_index, reduce_only=reduce_only,
-            # "<tag>-<uuid>": lets any process attribute this order (and its
-            # fills) to this runner from the account's order history alone.
-            client_order_id=f"{self.order_tag}-{uuid.uuid4().hex}",
+            # "<tag>-<y|n>-<hex>": lets any process attribute this order (and
+            # its fills) to this runner, and the runner recover a fill it lost
+            # in a crash, from the account's order history alone.
+            client_order_id=f"{self.order_tag}-{side[0]}-{uuid.uuid4().hex[:28]}",
         )
         if self._sim is not None:
             # Post-fill bookkeeping only -- the order is already done, and a

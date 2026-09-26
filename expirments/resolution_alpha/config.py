@@ -567,6 +567,13 @@ SIZE_FROM_SIM_BANKROLL = _bool_env("RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL", Fa
 # every open position on the account. Off = the single-runner behaviour.
 ORDER_TAG = _str_env("RESOLUTION_ALPHA_ORDER_TAG", "ra")
 SIM_BANKROLL_SHARED_ACCOUNT = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_ACCOUNT", False)
+# Shared-account mode fails closed when a runner's ledger state is lost: if
+# its status file is missing/unusable but its tag has filled orders on the
+# account in the last FRESH_ALLOCATION_LOOKBACK, it refuses to size (no
+# trades) rather than silently restart at a full allocation. Set this to true
+# for one restart to accept starting over, then unset it.
+SIM_BANKROLL_ALLOW_FRESH_ALLOCATION = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOW_FRESH_ALLOCATION", False)
+SIM_BANKROLL_FRESH_ALLOCATION_LOOKBACK_SECONDS = 7 * 24 * 3600
 
 # How often to re-evaluate active markets and poll spot prices, in seconds.
 POLL_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_POLL_INTERVAL_SECONDS", 2.0)

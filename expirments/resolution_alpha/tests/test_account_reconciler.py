@@ -54,6 +54,8 @@ class _Account:
     def _request(self, method, path, params=None):
         if path.startswith("/portfolio/orders/"):
             return {"order": self.orders[path.rsplit("/", 1)[1]]}
+        if path == "/portfolio/orders":  # min_ts ignored; callers dedupe by order id
+            return {"orders": list(self.orders.values()), "cursor": ""}
         if path == "/portfolio/settlements":
             return {"settlements": self.settlements, "cursor": ""}
         raise AssertionError(path)
@@ -93,8 +95,18 @@ class TestOrderTagging:
         om = _runner(account, "ra", tmp_path / "a.json", monkeypatch)
         om.buy_favored_side(T1, "no", 2, 0.72)
         om.buy_favored_side(T1, "no", 2, 0.72)
-        first, second = account.placed
-        assert first.startswith("ra-") and second.startswith("ra-") and first != second
+        om.buy_favored_side(T1, "yes", 2, 0.72)
+        first, second, third = account.placed
+        assert first.startswith("ra-n-") and second.startswith("ra-n-") and third.startswith("ra-y-")
+        assert first != second and len(first) <= 36  # no longer than the bare uuid4 it replaced
+
+    def test_tag_with_a_dash_is_rejected(self):
+        with pytest.raises(ValueError):
+            OrderManager(dry_run=True, order_tag="a-b")
+
+    def test_shared_account_needs_a_dollar_allocation(self):
+        with pytest.raises(ValueError):
+            OrderManager(dry_run=True, shared_account=True, allocation_dollars=0.0)
 
 
 class TestSharedAccountMode:
@@ -131,6 +143,76 @@ class TestSharedAccountMode:
         assert restarted._sim.allocation_epoch == before["allocation_epoch"]
         assert restarted._sim.cash == pytest.approx(8.0 - 1.4683 + 2.0)
         assert restarted._sim.positions == {}
+
+    def test_fill_lost_in_a_crash_is_recovered_on_resume(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        a = _runner(account, "a", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0)
+        _poll(a, monkeypatch)
+        a.buy_favored_side(T1, "no", 2, 0.72)  # booked in memory, status not rewritten: then it dies
+        assert _status(a)["sim_cash"] == pytest.approx(8.0)
+
+        restarted = _runner(account, "a", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0)
+        _poll(restarted, monkeypatch)
+        assert restarted._sim.recovered_orders == 1
+        assert restarted._sim.cash == pytest.approx(8.0 - 1.4683)
+        assert restarted._sim.positions[T1].no == 2.0
+        account.settle(T1, "no", 2.0)
+        _poll(restarted, monkeypatch)
+        assert restarted._sim.cash == pytest.approx(8.0 - 1.4683 + 2.0)
+
+    def test_fills_the_status_already_has_are_not_booked_twice(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        a = _runner(account, "a", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0)
+        _poll(a, monkeypatch)
+        a.buy_favored_side(T1, "no", 2, 0.72)
+        _poll(a, monkeypatch)  # written out, exact cost applied
+        restarted = _runner(account, "a", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0)
+        _poll(restarted, monkeypatch)
+        assert restarted._sim.recovered_orders == 0
+        assert restarted._sim.cash == pytest.approx(8.0 - 1.4683)
+
+    def test_no_sizing_until_the_ledger_has_resumed(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        a = _runner(account, "a", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0)
+        monkeypatch.setattr(config, "SIM_BANKROLL_STATUS_PATH", a._status_path)
+        assert a.get_balance_dollars() == 0.0
+        a.sync_sim_bankroll()
+        assert a.get_balance_dollars() == pytest.approx(8.0)
+
+    def test_lost_state_with_recent_fills_refuses_to_trade(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        a = _runner(account, "a", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0)
+        _poll(a, monkeypatch)
+        a.buy_favored_side(T1, "no", 2, 0.72)
+        _poll(a, monkeypatch)
+        (tmp_path / "a.json").unlink()  # state lost
+
+        restarted = _runner(account, "a", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0)
+        for _ in range(2):
+            _poll(restarted, monkeypatch)
+        assert not restarted._sim.initialized and restarted.get_balance_dollars() == 0.0
+
+        monkeypatch.setattr(config, "SIM_BANKROLL_ALLOW_FRESH_ALLOCATION", True)
+        _poll(restarted, monkeypatch)
+        assert restarted._sim.initialized and restarted.get_balance_dollars() == pytest.approx(8.0)
+
+    def test_a_brand_new_runner_starts_fresh(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        other = _runner(account, "b", tmp_path / "b.json", monkeypatch, allocation_dollars=3.0)
+        _poll(other, monkeypatch)
+        other.buy_favored_side(T2, "no", 2, 0.72)  # another tag's history doesn't count
+        a = _runner(account, "a", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0)
+        _poll(a, monkeypatch)
+        assert a._sim.initialized and a._sim.cash == pytest.approx(8.0)
+
+    def test_two_runners_on_one_status_file_dont_clobber(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        a = _runner(account, "a", tmp_path / "x.json", monkeypatch, allocation_dollars=8.0)
+        _poll(a, monkeypatch)
+        b = _runner(account, "b", tmp_path / "x.json", monkeypatch, allocation_dollars=3.0)
+        _poll(b, monkeypatch)
+        _poll(b, monkeypatch)
+        assert _status(a)["order_tag"] == "a"
 
     def test_status_from_another_tag_is_not_resumed(self, tmp_path, monkeypatch):
         account = _Account(20.0)
@@ -238,6 +320,13 @@ class TestAccountReconcilerCheck:
         rec.check({"a": _st(10.0)}, 20.0, now)
         assert rec.check({"a": _st(4.0, epoch="e2")}, 20.0, now).status == "rebaselined"
         assert rec.check({"a": _st(4.0, epoch="e2")}, 20.0, now).status == "ok"
+
+    def test_fresh_allocation_is_called_out(self):
+        rec = AccountReconciler()
+        now = time.time()
+        rec.check({"a": _st(10.0)}, 20.0, now)
+        result = rec.check({"a": _st(4.0, epoch="e2")}, 20.0, now)
+        assert "a FRESHLY ALLOCATED (epoch e1 -> e2)" in result.reason
 
     def test_a_new_ledger_rebaselines(self):
         rec = AccountReconciler()

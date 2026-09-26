@@ -122,10 +122,12 @@ to no more than the account, with some unallocated reserve.
 With a single runner and `SIM_BANKROLL_SHARED_ACCOUNT` off, behaviour is Phase 2's. The only live
 change is the order tag in `client_order_id`.
 
-- **Order tagging (on).** Every order's `client_order_id` is now `"<ORDER_TAG>-<uuid4 hex>"`, and the
-  tag defaults to `ra` (`RESOLUTION_ALPHA_ORDER_TAG`). Before, it was a bare `uuid4()`. That's the
-  only change in the order path, it's local, and it takes microseconds. The tag must be unique for
-  each runner on the account.
+- **Order tagging (on).** Every order's `client_order_id` is now `"<ORDER_TAG>-<y|n>-<28 hex>"`,
+  and the tag defaults to `ra` (`RESOLUTION_ALPHA_ORDER_TAG`, no `-` allowed). The middle field is
+  the outcome side, so a lost fill can be rebuilt from the order record alone. The ID is at most 36
+  characters for tags up to 5 characters, the same length as the bare `uuid4()` it replaced. That's
+  the only change in the order path, it's local, and it takes microseconds. The tag must be unique
+  for each runner on the account.
 - **Shared-account mode (`RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_ACCOUNT`, off).** When it's on:
   - The runner's own check stops comparing against the real balance, since other runners move it
     too. The status reads `shared`.
@@ -137,8 +139,31 @@ change is the order tag in `client_order_id`.
     land while it's down get applied at the first sync.
   - A **fresh** ledger in shared mode adopts no account positions. So switch a runner into shared
     mode while it's flat.
-  - Two runners running the same experiment code each need their own `RESOLUTION_ALPHA_LOG_DIR`,
-    since the status file is the resume state.
+  - Shared mode needs a fixed `SIM_BANKROLL_ALLOCATION_DOLLARS`, and the runner won't start without
+    it. A fraction of the real balance at startup would include other runners' cash.
+- **How a restart gets its balance right (shared mode):**
+  1. **Until the ledger has resumed, sizing returns $0** (no trades). The real balance includes
+     other runners' money, so it's never used as a fallback.
+  2. **It resumes from its own status file**: cash, positions with their `opened_ts`, pending exact
+     costs, and the allocation epoch. Settlements that landed while it was down are applied at the
+     first sync.
+  3. **A fill lost in the crash is recovered.** A fill booked in memory but not yet written out
+     (a gap of up to 15s) is found in `GET /portfolio/orders` since the status file's `updated_ts`
+     minus 120s, recognised by tag, and booked at exact cost. Orders the status file already knows
+     are skipped. The resume log line gives the count, at WARNING if it's more than 0.
+  4. **Lost state fails closed.** Suppose the status file is missing, unreadable, or belongs to
+     another tag, but this tag has filled orders in the last 7 days. The runner then logs
+     `NOT TRADING: ... its ledger state is lost` (ERROR, every 15 min) and keeps sizing at $0. To go
+     on, either restore the file, or set `RESOLUTION_ALPHA_SIM_BANKROLL_ALLOW_FRESH_ALLOCATION=true`
+     for one restart to start over at the allocation, then unset it. A brand-new tag with no
+     history starts fresh. The reconciler logs any fresh allocation at WARNING: `<tag> FRESHLY
+     ALLOCATED (epoch a -> b)`.
+  5. **Two runners on one log dir:** a runner won't overwrite a status file that another live
+     runner (a different instance, written within the last 60s) owns, and it logs an ERROR. Each
+     runner needs its own `RESOLUTION_ALPHA_LOG_DIR`.
+  - If the order records turn out to have no `client_order_id`, steps 3 and 4 can't see this
+    runner's history. They log a warning and fall back: nothing is recovered, and a fresh allocation
+    is allowed.
 - **The status file is richer:** `order_tag`, `instance_id`, `allocation_epoch`, `resumed_from`,
   `fill_seq`, `recent_order_ids` (the last 24h of booked orders), and pending exact costs.
 - **`account_reconciler.py`.** A standalone, read-only process that implements item 2 below except
@@ -180,7 +205,9 @@ change is the order tag in `client_order_id`.
   correction (`instance_id`, id, delta) into that runner's log dir, and the runner applies it once
   at its next sync. Only do this after `attribute()` has been checked against real payloads (next
   item).
-- **Unverified:** that `GET /portfolio/orders` records carry `client_order_id` and `ticker`. It's a
+- **Unverified:** that `GET /portfolio/orders` records carry `client_order_id` and `ticker`, and
+  that the list honours `min_ts`. If it doesn't, results are deduped and capped at 10 pages of 200.
+  Restart recovery (steps 3 and 4 above) needs the first two. `client_order_id` is a
   documented field, but this account's order payloads haven't been inspected for it. Attribution
   depends on it; the summed check doesn't. It's also unverified that Kalshi accepts a tagged
   `client_order_id`, but the format is the same character set and length as the uuid it replaces.

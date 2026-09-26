@@ -102,6 +102,7 @@ class SimulatedBankroll:
         self.pending_exact: dict[str, dict] = {}  # order_id -> {"ticker", "side", "cost", "count"}
         self.fill_seq = 0  # bumped on every booked fill; lets check() spot a fill racing the balance snapshot
         self.recent_order_ids: dict[str, float] = {}  # order_id -> booked ts
+        self.recovered_orders = 0  # fills resume() booked from the account's order history
 
         self.checks = 0
         self.inconclusive_checks = 0
@@ -139,14 +140,27 @@ class SimulatedBankroll:
             self.initialized = True
             return self.cash
 
-    def resume(self, state: dict, real_balance: float, fill_seq_at_balance: int) -> float | None:
+    def resume(
+        self,
+        state: dict,
+        real_balance: float,
+        fill_seq_at_balance: int,
+        recovered_orders: list[tuple[dict, str]] = (),
+    ) -> float | None:
         """Shared-account restart: carry on from this ledger's own last
         snapshot() (cash, positions, pending exact costs, allocation epoch)
         instead of re-allocating off the real balance and adopting every
         position on the account -- other runners' positions included.
         Settlements that landed while the process was down are picked up by
-        the next sync (positions keep their opened_ts). Returns None (retry
-        next sync) if a fill landed after `real_balance` was fetched."""
+        the next sync (positions keep their opened_ts).
+
+        `recovered_orders`: (GET order record, outcome side) for this
+        runner's own filled orders since the snapshot was written. A fill
+        booked in memory but not yet written out when the process died is
+        in there; orders the snapshot already knows are skipped.
+
+        Returns None (retry next sync) if a fill landed after `real_balance`
+        was fetched."""
         with self._lock:
             if self.fill_seq != fill_seq_at_balance:
                 return None
@@ -161,8 +175,34 @@ class SimulatedBankroll:
             self.recent_order_ids = dict(state.get("recent_order_ids") or {})
             self.allocation_epoch = state.get("allocation_epoch") or self.instance_id
             self.resumed_from = state.get("instance_id")
+            opened_ts = float(state.get("updated_ts") or time.time())
+            self.recovered_orders = sum(
+                self._book_order_record(order, side, opened_ts) for order, side in recovered_orders
+            )
             self.initialized = True
             return self.cash
+
+    def _book_order_record(self, order: dict, side: str, opened_ts: float) -> bool:
+        """Book a filled order straight from its GET order record (exact
+        cost), unless this ledger already has it. Caller holds the lock."""
+        order_id = order.get("order_id")
+        if not order_id or order_id in self.recent_order_ids or order_id in self.pending_exact:
+            return False
+        count = _f(order.get("fill_count_fp"))
+        if count <= 0:
+            return False
+        self.cash -= sum(_f(order.get(k)) for k in (
+            "taker_fill_cost_dollars", "maker_fill_cost_dollars", "taker_fees_dollars", "maker_fees_dollars",
+        ))
+        ticker = order["ticker"]
+        is_new = ticker not in self.positions
+        self._add_contracts(ticker, side, count)
+        if is_new and ticker in self.positions:
+            # settlement lookups start from opened_ts; the fill was after the snapshot
+            self.positions[ticker].opened_ts = opened_ts
+        self.recent_order_ids[order_id] = time.time()
+        self.fill_seq += 1
+        return True
 
     def _allocation(self, real_balance: float) -> float:
         if self.allocation_dollars is not None:
