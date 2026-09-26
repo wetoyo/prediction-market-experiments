@@ -536,13 +536,12 @@ DRY_RUN_SIMULATED_BALANCE_DOLLARS = _float_env("RESOLUTION_ALPHA_DRY_RUN_BALANCE
 # 15-minute markets is immaterial. No effect in dry-run.
 BANKROLL_REFRESH_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_BANKROLL_REFRESH_INTERVAL_SECONDS", 15.0)
 
-# Per-runner simulated bankroll (sim_bankroll.py, added 2026-09-22) -- SHADOW
-# ONLY: tracked by OrderManager from its own fills/settlements and checked
-# against the real balance on every bankroll refresh above, but nothing sizes
-# off it yet. It exists to prove, while this is the only runner on the
-# account, that a per-runner ledger stays in lockstep with reality before
-# several models are given their own slices of one account (see
-# live/SIM_BANKROLL_PLAN.md). The allocation is ALLOCATION_DOLLARS when > 0,
+# Per-runner simulated bankroll (sim_bankroll.py, added 2026-09-22): tracked by
+# OrderManager from its own fills/settlements and checked against the real
+# balance on every bankroll refresh above. Shadow only unless
+# SIZE_FROM_SIM_BANKROLL (below) is on. It exists so several models can later
+# be given their own slices of one account, each sizing off its own ledger
+# (see live/SIM_BANKROLL_PLAN.md). The allocation is ALLOCATION_DOLLARS when > 0,
 # else ALLOCATION_FRACTION of the real balance at startup. A divergence
 # beyond TOLERANCE on two consecutive checks is counted, logged and resynced;
 # the running tally lives in SIM_BANKROLL_STATUS_PATH (JSON), each event in
@@ -552,6 +551,12 @@ SIM_BANKROLL_ENABLED = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_ENABLED", True)
 SIM_BANKROLL_ALLOCATION_DOLLARS = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_DOLLARS", 0.0)
 SIM_BANKROLL_ALLOCATION_FRACTION = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_FRACTION", 1.0)
 SIM_BANKROLL_TOLERANCE_DOLLARS = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_TOLERANCE_DOLLARS", 0.01)
+# Phase 2 (live/SIM_BANKROLL_PLAN.md): size off the ledger instead of the
+# whole real balance. OrderManager.get_balance_dollars then returns
+# min(ledger cash, real balance) -- never more than the account holds. The
+# divergence check + resync keep running as the safety net. Needs
+# SIM_BANKROLL_ENABLED; ignored (real balance, with a warning) without it.
+SIZE_FROM_SIM_BANKROLL = _bool_env("RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL", False)
 
 # How often to re-evaluate active markets and poll spot prices, in seconds.
 POLL_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_POLL_INTERVAL_SECONDS", 2.0)

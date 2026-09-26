@@ -1745,10 +1745,12 @@ async def run_forever() -> None:
                     logger.exception("failed to fetch account balance -- halting sizing/trading until the next refresh")
                     cycle_state["bankroll_dollars"] = None
                 else:
-                    # Shadow check of the per-runner simulated bankroll against
-                    # the balance just fetched (see order_manager.sync_sim_bankroll).
-                    # Fire-and-forget: its extra REST calls must never delay this
-                    # loop, and nothing here reads its result.
+                    # Update the per-runner simulated bankroll and check it
+                    # against the balance just fetched (see
+                    # order_manager.sync_sim_bankroll). Fire-and-forget: its extra
+                    # REST calls must never delay this loop, and nothing here
+                    # reads its result. With SIZE_FROM_SIM_BANKROLL on, the next
+                    # get_balance_dollars above returns the updated ledger.
                     if sim_sync_task is None or sim_sync_task.done():
                         sim_sync_task = asyncio.create_task(asyncio.to_thread(order_manager.sync_sim_bankroll))
                 last_bankroll_refresh = now_ts

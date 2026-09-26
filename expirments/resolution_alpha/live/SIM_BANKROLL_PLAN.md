@@ -59,7 +59,15 @@ settlements), and the runner sizes off that ledger. Nothing shared sits in the o
 
 It takes effect on the next `resolution-alpha.service` restart.
 
-## Phase 1: prove it doesn't diverge
+## Phase 1: prove it doesn't diverge (accepted 2026-09-26)
+
+Result: the restart at 2026-09-22 22:56 EDT ran through 2026-09-26 01:05 EDT (3d 2h). 69 markets
+were traded and settled. Across 16,538 checks there were 0 divergences and 0 inconclusive checks.
+The ledger tracked every balance move exactly. Three exits triggered, but each filled 0 contracts,
+so the pair-redemption timing is **still unverified**. The owner accepted Phase 1 anyway, short of
+100 trades. If a filled exit is ever followed by a confirmed divergence of about +pairs, then
+another of about -pairs at settlement, move the pair credit into `apply_settlement` (see
+`SIM_BANKROLL_HANDOFF.md`).
 
 This phase only works while this runner is the only thing trading the account.
 
@@ -83,14 +91,21 @@ cat expirments/resolution_alpha/live/logs/sim_bankroll.json
 journalctl -u resolution-alpha.service | grep sim-bankroll
 ```
 
-## Phase 2: one runner sizes off its ledger
+## Phase 2: one runner sizes off its ledger (code done 2026-09-26, flag off)
 
-- Add a flag, `RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL` (default false). When it's on,
-  `get_balance_dollars` returns `min(ledger cash, real balance)`. Never more than the account actually
-  holds.
-- The runner's per-fill `cycle_state["bankroll_dollars"] -= cost` becomes redundant, because the
-  ledger already decrements on every fill. Remove it in the same change so the cost isn't subtracted
-  twice.
+- The flag is `RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL` (default false). When it's on,
+  `get_balance_dollars` returns `SimulatedBankroll.sizing_cash(real)`:
+  `max(0, min(ledger cash, real balance))`. That's never more than the account actually holds. Before
+  the first sync has initialized the ledger, it returns the coming allocation.
+  - The `min` means a ledger bug can never size past what the account holds.
+  - A fill the ledger missed leaves its cash too high. The divergence check catches that and resyncs
+    within two syncs (about 30s).
+  - A settlement the ledger hasn't applied yet leaves its cash too low, which only sizes smaller for
+    one refresh.
+- **Keep** the runner's per-fill `cycle_state["bankroll_dollars"] -= cost`. An earlier draft of this
+  plan said to remove it, and that was wrong. The ledger is read only once per 15s refresh, and the
+  runner decrements its own copy between refreshes, so nothing is subtracted twice. Without that
+  decrement, a burst of fills within one refresh window would size off stale cash.
 - Keep the divergence check and resync running as a safety net. Resync keeps the ledger honest if an
   event is missed.
 - Roll it out with `allocation_fraction=1.0` first. Sizing should come out the same as today to within

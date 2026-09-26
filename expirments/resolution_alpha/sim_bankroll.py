@@ -3,12 +3,13 @@ keeps for itself, so that (eventually) several models can share one Kalshi
 account, each sizing off its own allocation instead of the whole real
 balance. See live/SIM_BANKROLL_PLAN.md for the full rollout plan.
 
-SHADOW MODE ONLY (added 2026-09-22): nothing reads `cash` for sizing yet.
-The runner still sizes off the real account balance exactly as before; this
-ledger is tracked alongside it and checked against the real balance on every
-bankroll refresh, to prove it stays in lockstep before anything trusts it.
-With one runner on the account, "in lockstep" is exact: every change in the
-real balance must be explained by this runner's own fills and settlements.
+Added 2026-09-22 in shadow mode: tracked alongside the real balance and
+checked against it on every bankroll refresh, to prove it stays in lockstep
+before anything trusts it. With one runner on the account, "in lockstep" is
+exact: every change in the real balance must be explained by this runner's
+own fills and settlements. Phase 1 (2026-09-22..26: 69 settled trades, 0
+divergences) passed; from 2026-09-26 OrderManager can size off it
+(`sizing_cash`) behind config.SIZE_FROM_SIM_BANKROLL, default off.
 
 This module is pure bookkeeping -- no network. OrderManager feeds it:
   - record_fill: from the POST order response, right after an order returns.
@@ -113,21 +114,36 @@ class SimulatedBankroll:
         with self._lock:
             if self.fill_seq != fill_seq_at_balance:
                 return None
-            if self.allocation_dollars is not None:
-                self.cash = self.allocation_dollars
-                if self.allocation_dollars > real_balance:
-                    logger.warning(
-                        "[sim-bankroll] fixed allocation $%.4f exceeds the real balance $%.4f",
-                        self.allocation_dollars, real_balance,
-                    )
-            else:
-                self.cash = real_balance * self.allocation_fraction
+            if self.allocation_dollars is not None and self.allocation_dollars > real_balance:
+                logger.warning(
+                    "[sim-bankroll] fixed allocation $%.4f exceeds the real balance $%.4f",
+                    self.allocation_dollars, real_balance,
+                )
+            self.cash = self._allocation(real_balance)
             self.offset = self.cash - real_balance
             for ticker, (side, contracts) in (open_positions or {}).items():
                 pos = self.positions.setdefault(ticker, _Position())
                 setattr(pos, side, getattr(pos, side) + contracts)
             self.initialized = True
             return self.cash
+
+    def _allocation(self, real_balance: float) -> float:
+        if self.allocation_dollars is not None:
+            return self.allocation_dollars
+        return real_balance * self.allocation_fraction
+
+    def sizing_cash(self, real_balance: float) -> float:
+        """What the runner may size off: this ledger's own cash, never more
+        than the account really holds, never below 0. Before the first sync
+        has initialized the ledger, the allocation it is about to get.
+
+        The min() never lets a ledger bug size past what the account holds.
+        A fill the ledger missed (cash too high) is caught by the divergence
+        check and resynced within two syncs. A settlement it hasn't applied
+        yet (cash too low) only sizes smaller until the next sync."""
+        with self._lock:
+            cash = self.cash if self.initialized else self._allocation(real_balance)
+        return max(0.0, min(cash, real_balance))
 
     # -- events --------------------------------------------------------------
 

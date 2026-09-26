@@ -118,6 +118,7 @@ class OrderManager:
     # Class-level fallbacks so an instance built via OrderManager.__new__
     # (tests/test_order_manager.py's TestPlaceOrderWiring) has no ledger.
     _sim: SimulatedBankroll | None = None
+    _size_from_sim = False
     _balance_snapshot: tuple[float, int] | None = None
     _checks_since_status_log = 0
 
@@ -126,12 +127,14 @@ class OrderManager:
         dry_run: bool = DRY_RUN,
         allocation_dollars: float | None = config.SIM_BANKROLL_ALLOCATION_DOLLARS,
         allocation_fraction: float = config.SIM_BANKROLL_ALLOCATION_FRACTION,
+        size_from_sim: bool = config.SIZE_FROM_SIM_BANKROLL,
     ):
         """`allocation_dollars` (when > 0) or else `allocation_fraction` of the
         real balance is this manager's slice of the account, tracked by its
-        own simulated bankroll (sim_bankroll.py). SHADOW ONLY for now:
-        get_balance_dollars still returns the real account balance and
-        nothing sizes off the simulated one -- see sync_sim_bankroll."""
+        own simulated bankroll (sim_bankroll.py). With `size_from_sim` off
+        (the default) that ledger is shadow only: get_balance_dollars returns
+        the real account balance. With it on, get_balance_dollars returns the
+        ledger's cash, capped at the real balance -- see sync_sim_bankroll."""
         self.dry_run = dry_run
         self._client = None
         if not dry_run:
@@ -140,20 +143,33 @@ class OrderManager:
                 self._sim = SimulatedBankroll(
                     allocation_dollars, allocation_fraction, config.SIM_BANKROLL_TOLERANCE_DOLLARS,
                 )
+                self._size_from_sim = size_from_sim
+            elif size_from_sim:
+                logger.warning(
+                    "SIZE_FROM_SIM_BANKROLL is on but SIM_BANKROLL_ENABLED is off -- sizing off the real balance"
+                )
 
     def get_balance_dollars(self) -> float:
-        """Real account balance, for Kelly sizing (runner.py's
-        _kelly_contracts). Only call when dry_run is False -- there's no
-        client to query otherwise; runner.py uses
-        config.DRY_RUN_SIMULATED_BALANCE_DOLLARS in that case instead.
+        """Bankroll for Kelly sizing (runner.py's _kelly_contracts): the real
+        account balance, or with SIZE_FROM_SIM_BANKROLL on, this manager's
+        ledger cash capped at the real balance (SimulatedBankroll.sizing_cash).
+        Only call when dry_run is False -- there's no client to query
+        otherwise; runner.py uses config.DRY_RUN_SIMULATED_BALANCE_DOLLARS in
+        that case instead.
 
-        Also stashes the value (with the ledger's fill counter at that
-        moment) for the next sync_sim_bankroll -- the return value is
-        unchanged by the simulated bankroll.
+        Also stashes the real balance (with the ledger's fill counter at that
+        moment) for the next sync_sim_bankroll.
+
+        runner.py still subtracts each fill's cost from the value returned
+        here until the next refresh. That's not a double count: the ledger
+        is read once per refresh, and the runner decrements its own copy.
         """
         balance = float(self._client.get_balance()["balance_dollars"])
-        if self._sim is not None:
-            self._balance_snapshot = (balance, self._sim.fill_seq)
+        if self._sim is None:
+            return balance
+        self._balance_snapshot = (balance, self._sim.fill_seq)
+        if self._size_from_sim:
+            return self._sim.sizing_cash(balance)
         return balance
 
     def sync_sim_bankroll(self) -> None:
@@ -175,7 +191,7 @@ class OrderManager:
         try:
             self._sync_sim_bankroll()
         except Exception:
-            logger.exception("[sim-bankroll] sync failed (shadow only -- trading unaffected)")
+            logger.exception("[sim-bankroll] sync failed (orders unaffected; the ledger catches up next sync)")
 
     def _sync_sim_bankroll(self) -> None:
         sim = self._sim
@@ -191,8 +207,8 @@ class OrderManager:
                 return  # a fill raced the balance snapshot; retry on the next refresh
             _log_despite_lightweight_mode(
                 logging.INFO,
-                "[sim-bankroll] initialized (shadow only): sim $%.4f of real $%.4f, adopted %d open position(s)",
-                cash, real_balance, len(adopted),
+                "[sim-bankroll] initialized (%s): sim $%.4f of real $%.4f, adopted %d open position(s)",
+                "SIZING off it" if self._size_from_sim else "shadow only", cash, real_balance, len(adopted),
             )
             self._write_sim_status(None)
             return
@@ -341,5 +357,8 @@ class OrderManager:
             try:
                 self._sim.record_fill(ticker, side, response)
             except Exception:
-                logger.exception("[sim-bankroll] failed to book %s fill (shadow only -- trading unaffected)", ticker)
+                # Sizing: the next sync's divergence check catches the
+                # missed fill and resyncs the ledger (and sizing_cash never
+                # exceeds the real balance meanwhile).
+                logger.exception("[sim-bankroll] failed to book %s fill (the order itself is unaffected)", ticker)
         return response

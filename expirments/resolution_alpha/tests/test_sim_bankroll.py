@@ -150,6 +150,29 @@ class TestCheck:
         assert sim.initialize(8.5317, sim.fill_seq) == pytest.approx(8.5317)
 
 
+class TestSizingCash:
+    def test_before_init_is_the_coming_allocation(self):
+        sim = SimulatedBankroll(allocation_fraction=0.25)
+        assert sim.sizing_cash(100.0) == pytest.approx(25.0)
+        assert SimulatedBankroll(allocation_dollars=40.0).sizing_cash(100.0) == pytest.approx(40.0)
+
+    def test_is_the_ledger_cash(self):
+        sim = _ready(100.0, allocation_fraction=0.25)
+        sim.record_fill(TICKER, "no", _post_response())
+        assert sim.sizing_cash(100.0) == pytest.approx(sim.cash)
+
+    def test_never_more_than_the_account_holds(self):
+        assert SimulatedBankroll(allocation_dollars=40.0).sizing_cash(30.0) == pytest.approx(30.0)
+        sim = _ready(10.0)
+        sim.cash = 12.0  # e.g. a fill the ledger missed
+        assert sim.sizing_cash(10.0) == pytest.approx(10.0)
+
+    def test_never_negative(self):
+        sim = _ready(10.0)
+        sim.cash = -0.5
+        assert sim.sizing_cash(10.0) == 0.0
+
+
 class _FakeExchange:
     """Kalshi account with real cash semantics: fills debit exact cost + fee,
     settlements credit $1 per winning contract."""
@@ -257,3 +280,36 @@ class TestOrderManagerWiring:
         _poll(om)
         _poll(om)
         assert om._sim.divergence_count == 0
+
+
+class TestSizeFromSim:
+    @pytest.fixture
+    def sizing_om(self, om):
+        om._size_from_sim = True
+        om._sim = SimulatedBankroll(allocation_fraction=0.25)
+        return om
+
+    def test_sizes_off_the_allocation_from_the_first_poll(self, sizing_om):
+        assert sizing_om.get_balance_dollars() == pytest.approx(2.5)  # before the first sync initializes
+
+    def test_sizes_off_the_ledger_through_a_trade_and_settlement(self, sizing_om):
+        _poll(sizing_om)
+        sizing_om.buy_favored_side(TICKER, "no", 2, 0.72)
+        assert sizing_om.get_balance_dollars() == pytest.approx(2.5 - 1.4683, abs=1e-3)  # provisional 4dp cost
+        sizing_om.sync_sim_bankroll()
+        assert sizing_om.get_balance_dollars() == pytest.approx(2.5 - 1.4683)  # exact cost
+        sizing_om.sync_sim_bankroll()
+        sizing_om._client.settle(_settlement(), 2.0)
+        _poll(sizing_om)
+        _poll(sizing_om)
+        assert sizing_om.get_balance_dollars() == pytest.approx(2.5 - 1.4683 + 2.0)
+        assert sizing_om._sim.divergence_count == 0
+
+    def test_ledger_bug_is_capped_by_the_real_balance(self, sizing_om):
+        _poll(sizing_om)
+        sizing_om._sim.cash = 50.0
+        assert sizing_om.get_balance_dollars() == pytest.approx(10.0)
+
+    def test_off_by_default(self, om):
+        _poll(om)
+        assert om.get_balance_dollars() == pytest.approx(10.0)
