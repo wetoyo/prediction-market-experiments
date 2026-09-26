@@ -1,68 +1,147 @@
-# Handoff: simulated-bankroll shadow experiment (resolution_alpha)
+# Handoff: per-runner bankroll (resolution_alpha), Phases 1–3
 
-**Started:** 2026-09-22, evening (EDT), when `resolution-alpha.service` was restarted onto `c50cb90`.
-To get the exact start time on the Pi:
-
-```
-systemctl show resolution-alpha.service -p ActiveEnterTimestamp
-```
-
-**Owner:** wetoyo. Written by a Claude Code session, for whoever picks this up next.
+**Last updated:** 2026-09-26 01:40 EDT, by a Claude Code session, for whoever picks this up next.
+**Owner:** wetoyo. **Rollout plan and design:** `live/SIM_BANKROLL_PLAN.md`. Read it for the *why*;
+this file covers *where things stand and what to do next*.
 
 ---
 
-## Status (2026-09-26): Phase 1 accepted, Phase 2 code ready with the flag off
+## TL;DR: what's running right now
 
-- The owner accepted Phase 1 on 2026-09-26: 0 divergences over 3 days and 69 trades. They waived
-  the 100-trade minimum and the filled-exit requirement, so **pair-redemption timing is still
-  unverified**. Keep an eye on the first exit that actually fills.
-- Phase 2 (size off the ledger) is committed on the branch behind
-  `RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL` (default false). See `SIM_BANKROLL_PLAN.md` Phase 2.
-  - **To turn it on:** add `RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL=true` to `live/.env`, pull the
-    code, and restart. The restart is the owner's call.
-  - The startup line then reads `initialized (SIZING off it)`.
-  - With the fraction at 1.0, sizing should match today's to within $0.01, since the ledger has
-    tracked the real balance exactly.
-  - Keep checking `divergence_count`. It's now a live safety net, not just a measurement.
-- Phase 3 pieces are also on the branch (see the plan, Phase 3, "Built 2026-09-26").
-  - Orders are tagged `ra-<uuid>`. This is live after the next restart and is the only behaviour
-    change.
-  - Shared-account mode is behind `RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_ACCOUNT` (off).
-  - `account_reconciler.py` is read-only. Running it now, with one runner, duplicates the runner's
-    own check, which is a good way to validate it before a second model exists.
+| | |
+|---|---|
+| Pi service | `resolution-alpha.service`, PID **41866**, restarted by the owner **2026-09-26 01:24:39 EDT** |
+| Code the process runs | **`f16bb50`** (Phase 3 groundwork). The disk has `2fb9c95`, which isn't running (see below). |
+| Branch | `resolution-alpha-no-kalshi-state` (**not `main`**), pushed to origin |
+| `live/.env` | `RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL=true`. Shared-account mode is **not** set (off). |
+| Effect | **Phase 2 is live: the runner sizes off its ledger** (`initialized (SIZING off it)` at 01:24:44). Allocation fraction 1.0, so sizing should equal the real balance. Orders carry `client_order_id = "ra-<32 hex>"`. |
+| Ledger at handoff | sim $3.3313 == real $3.3313. 0 divergences. No trades since the restart yet (as of 01:35). |
+| Dev worktree | `D:/Files/Code/pme-ra-branch` has the branch checked out, with the submodule initialized. The main checkout at `D:/Files/Code/prediction-market-experiments` is on `main`, with unrelated uncommitted work. **Don't commit this branch's work there.** |
+
+### Commits this session (all on the branch, all pushed)
+
+| Commit | What | Running? |
+|---|---|---|
+| `d846160` | Phase 2: `SIZE_FROM_SIM_BANKROLL` (sizing = `max(0, min(ledger cash, real))`) + this handoff | yes (flag on) |
+| `f16bb50` | Phase 3 groundwork: order tagging, `SIM_BANKROLL_SHARED_ACCOUNT` (off), `account_reconciler.py` | yes (tag only) |
+| `2fb9c95` | Shared-mode restart safety (resume recovers lost fills, fails closed on lost state, and more) | **no: needs a restart** |
+| (next) | `inspect_order_records.py` + this rewrite | n/a, docs/tooling |
+
+`2fb9c95` changes the order ID format to `"ra-<y|n>-<28 hex>"`. Otherwise it only touches shared
+mode, which is off. Restarting onto it is safe once the caveat below is checked, and the owner
+decides when.
 
 ---
 
-## What this experiment is testing
+## ⚠ Open caveat: unverified Kalshi payload fields (do this first)
 
-Eventually each model (runner) will get its own `OrderManager`, started with its own slice of the Kalshi
-account (a dollar amount or a fraction). Each model will size its bets off that slice, not off the
-whole real balance. That only works if each manager's own cash ledger never drifts from reality.
+Several Phase 3 features read **`GET /portfolio/orders`** list records, and nobody has looked at a
+real one on this account yet. The earlier session's attempt was blocked by the auto-mode classifier.
+The owner said they'd run the next session with `--dangerously-skip-permissions` so these can be read.
 
-This experiment tests exactly that. It runs **in shadow**: the ledger is tracked and checked, but
-**nothing trades off it**. The runner still sizes off the real account balance, exactly as before.
-resolution_alpha is currently the only thing trading the account. So every change in the real
-balance should be explained by this runner's own fills and settlements, and the ledger should match
-to within $0.01.
+**What depends on what:**
 
-**The question:** does `divergence_count` stay at 0?
+| Assumption | Needed by | If it's false |
+|---|---|---|
+| List records carry `client_order_id` | Shared-mode restart recovery of a crash-lost fill (`OrderManager._own_filled_orders`), the fail-closed lost-state guard (`_fresh_allocation_allowed`), and the reconciler's attribution (`account_reconciler.attribute`) | Recovery and the guard log a warning and **fall back**: nothing is recovered, and a fresh allocation is allowed. Attribution files every fill as "untagged". The summed reconciler check still works. |
+| List records carry `ticker`, `order_id`, `fill_count_fp`, and the exact-cost fields | Same as above (`_book_order_record`) | Recovery raises a KeyError on `ticker`, the sync logs an exception, and the ledger stays uninitialized. **Sizing stays $0 in shared mode.** Fails closed. |
+| `min_ts` is honoured on the orders list | Recovery window and the 7-day lookback | Results are deduped by order id, so it's still correct, but capped at 10 pages × 200. If `min_ts` is ignored, the 7-day lookback only sees the newest 2,000 orders. |
+| Kalshi **accepts** a tagged `client_order_id` (`ra-<hex>`, and from `2fb9c95` `ra-<y|n>-<hex>`) | Every live order since the 01:24 restart | Orders are rejected, probably with HTTP 400. The ticker gets blacklisted for the cycle, so **no entries fill**. |
+
+**How to check (read-only, safe while trading):**
+
+```
+ssh wetoyo@100.109.148.56
+cd ~/prediction-market-experiments/expirments/resolution_alpha
+# 1. Did orders since the 01:24 restart go through? Look for LIVE ORDER followed by "entry filled", and no 400s.
+journalctl -u resolution-alpha.service --since '2026-09-26 01:24' | grep -E 'LIVE ORDER|entry filled|HTTPError|400|ERROR'
+# 2. Field check: prints field names, counts and client_order_id shapes only (no balances or credentials)
+../../.venv/bin/python inspect_order_records.py
+# 3. Reconciler smoke test: the first check sets the baseline, the second is a real check. Expect "ok".
+../../.venv/bin/python account_reconciler.py --count 2 --interval 20
+```
+
+What to do with the results:
+
+- `client_order_id` **present** and the `ra-...` shapes show up among recent orders: the recovery,
+  the guard and attribution are all good to go. Remove the "Unverified" bullet in the plan's Phase 3
+  "Still open" list.
+- `client_order_id` **missing**: the tag can't be read back from the list. Options: look for it on
+  `GET /portfolio/fills` instead; or have the ledger persist every order id immediately (writing a
+  small append-only file off the order path, **not** in `buy_favored_side`'s critical section).
+  Update `_own_filled_orders` and `attribute` to match, and adjust the tests' `_Account` fake to
+  the real record shape.
+- `ticker` or cost fields **missing** from the list: fetch each candidate order with
+  `GET /portfolio/orders/{id}`, which is known to have the cost fields, before booking it.
+- **Orders rejected** because of the tag: urgent, since the live runner can't fill. Tell the owner.
+  The fastest fix is to revert to a bare uuid by passing no `client_order_id`, which makes
+  `live_execution.place_order` fall back to `uuid4()`. Tagging, recovery and attribution then need
+  another way to identify orders (see the previous point).
+
+The other open caveat, carried over from Phase 1: **pair-redemption timing is still unverified.**
+Three exits triggered in Phase 1, and all filled 0 contracts. The first exit that *fills* is the
+test; see "Known open question" below. If the assumption is wrong, the ledger briefly shows about
++$1 per pair *more* cash than the account right after the exit. Sizing is capped at the real balance,
+so it never sizes past what the account holds. The divergence check resyncs it within about 30s,
+and the mirror-image gap at settlement briefly under-sizes.
+
+---
+
+## Next steps, in order
+
+1. **Clear the caveat above.** Then record the outcome in the results log at the bottom of this
+   file.
+2. **Restart onto `2fb9c95`** when the owner OKs it (`sudo systemctl restart
+   resolution-alpha.service`). Afterwards, check that the new-format order IDs are accepted, using
+   the same journal grep.
+3. **Watch Phase 2** for a few days: `divergence_count` stays 0, and sizing looks the same as
+   before. Then try a fixed `RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_DOLLARS` below the balance
+   (the plan's Phase 2 last step).
+4. **Optionally, run the reconciler continuously.** The systemd unit sketch is in the plan's
+   Phase 3 section. It isn't installed. With one runner it duplicates the runner's own check.
+5. **Sync the branch into `main`** (plan: "Syncing this branch with main"). This is a prerequisite
+   for getting the other experiments onto per-runner ledgers.
+6. **Remaining Phase 3 work** (plan's "Still open"):
+   - cross-process ledger correction from the reconciler (after attribution is verified);
+   - porting `sim_bankroll` + wiring to `btc_implied_prob` / `golf_field_alpha`, which are stale
+     on this branch.
+
+### Before turning shared-account mode on (only when a second runner exists)
+
+- Set `RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_DOLLARS` (it's required; the runner refuses to start
+  without it).
+- Give each runner its own `RESOLUTION_ALPHA_ORDER_TAG` (no `-`) **and** its own
+  `RESOLUTION_ALPHA_LOG_DIR`.
+- Switch while the runner is **flat**. A fresh shared-mode ledger adopts no account positions.
+- On restart it resumes from its own `sim_bankroll.json` and recovers crash-lost fills. If that
+  file is lost while the tag has recent fills, it logs `NOT TRADING: ... its ledger state is lost`
+  and sizes $0. To go on, restore the file, or set
+  `RESOLUTION_ALPHA_SIM_BANKROLL_ALLOW_FRESH_ALLOCATION=true` for **one** restart, then unset it.
+
+---
 
 ## Where everything is
 
-| What | Where |
+| What | Where (under `expirments/resolution_alpha/`) |
 |---|---|
-| Branch (live on the Pi) | `resolution-alpha-no-kalshi-state`. **Not `main`**. |
-| Commits | `5670109` is the Pi's existing hotfix batch, now committed. `c50cb90` is this experiment. |
-| Ledger logic (pure, no network) | `expirments/resolution_alpha/sim_bankroll.py` |
-| Wiring | `order_manager.py`: `record_fill` in `buy_favored_side`, `get_balance_dollars`, `sync_sim_bankroll` |
-| Runner hook | `runner.py`, the bankroll-refresh block (`else:` branch). It starts the sync in the background after each good balance poll. |
-| Config | `config.py` `SIM_BANKROLL_*`. Env vars are `RESOLUTION_ALPHA_SIM_BANKROLL_{ENABLED,ALLOCATION_DOLLARS,ALLOCATION_FRACTION,TOLERANCE_DOLLARS}`. |
-| Tests | `tests/test_sim_bankroll.py` (24 tests; the full suite has 67) |
-| Full rollout plan, and how to sync with main | `live/SIM_BANKROLL_PLAN.md` (on the branch) |
-| Pi | `wetoyo@100.109.148.56`, repo at `~/prediction-market-experiments` |
+| Ledger logic (pure, no network) | `sim_bankroll.py`: `SimulatedBankroll` (`record_fill`, `apply_exact_cost`, `apply_settlement`, `check`, `sizing_cash`, `resume`, `_book_order_record`, `snapshot`) |
+| Wiring | `order_manager.py`: `buy_favored_side` (tagging + `record_fill`), `get_balance_dollars` (sizing), `sync_sim_bankroll` / `_initialize_sim` (resume, recovery, fail-closed guard), `_status_file_taken` |
+| Runner hook | `runner.py`, bankroll-refresh block: starts the sync in the background after each good balance poll. The per-fill `bankroll -= cost` is **intentionally kept** (see the plan, Phase 2). |
+| Account reconciler | `account_reconciler.py`: pure `AccountReconciler.check` + `attribute`; CLI loop |
+| Payload check | `inspect_order_records.py` (read-only) |
+| Config | `config.py`: `SIM_BANKROLL_*`, `SIZE_FROM_SIM_BANKROLL`, `ORDER_TAG`, `SIM_BANKROLL_SHARED_ACCOUNT`, `SIM_BANKROLL_ALLOW_FRESH_ALLOCATION`. Every env var is prefixed `RESOLUTION_ALPHA_`. |
+| Tests | `tests/test_sim_bankroll.py`, `tests/test_account_reconciler.py`. **105 tests** in the full suite; all pass locally and on the Pi. Run `python -m pytest tests -q` from `expirments/resolution_alpha`. |
+| Pi | `wetoyo@100.109.148.56`, repo at `~/prediction-market-experiments`, venv at `.venv` |
 
-Settings the Pi is running with: allocation fraction **1.0** (whole account), tolerance **$0.01**,
-enabled.
+## Phase 1 (done): what it tested
+
+Phase 1 ran the ledger **in shadow** from 2026-09-22 22:56 to 2026-09-26 01:24. It was tracked and
+checked, but nothing traded off it, to prove it stays in lockstep with the real balance while
+resolution_alpha is the only thing trading the account. Result: 69 settled trades, 16,560 checks,
+**0 divergences**, 0 inconclusive checks. The owner accepted it without waiting for the 100-trade
+minimum or a filled exit.
+
+The sections below still apply to reading the live ledger under Phase 2.
 
 ## How to read the results
 
@@ -104,7 +183,7 @@ The startup log line should look like this:
 If it's missing, the ledger never started. Check that the service isn't in dry-run and that
 `SIM_BANKROLL_ENABLED` isn't false.
 
-## Pass / fail
+## Pass / fail (Phase 1, historical)
 
 **Pass (move on to Phase 2 in the plan):**
 
@@ -166,12 +245,15 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 
 ## Turning it off / rolling back
 
-- **Disable just the ledger:** add `RESOLUTION_ALPHA_SIM_BANKROLL_ENABLED=false` to `live/.env`, then
-  restart the service.
+- **Stop sizing off the ledger (back to the real balance), keeping it as a shadow:** remove
+  `RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL=true` from `live/.env`, then restart.
+- **Disable the ledger entirely:** add `RESOLUTION_ALPHA_SIM_BANKROLL_ENABLED=false` to `live/.env`,
+  then restart the service.
 - **Full code rollback:** back up the files, then
   `git checkout 5670109 -- expirments/resolution_alpha` on the Pi. File backups from the deploy are at
   `expirments/resolution_alpha/*.bak.20260922_224920_simbankroll`.
-- Trading behaviour is the same either way. The ledger only observes.
+- With `SIZE_FROM_SIM_BANKROLL` on, the ledger **does** drive sizing, capped at the real balance.
+  Every other path only observes.
 
 ## Pi etiquette (read before touching the box)
 
@@ -193,4 +275,5 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 |---|---|---|---|---|---|---|
 | 2026-09-22 23:07 EDT | 11 min / 1 settled | 0 | 0 | 0 / 43 | 0 | Restarted 22:56:21 onto `c50cb90` (PID 27128). Initialized at $4.3086. First trade: 1 YES KXBTCD-26SEP2223-T86499.99 @0.94 + $0.004 fee, settled YES. Ledger $4.3646 == real $4.3646, gap $0.0000. |
 | 2026-09-26 01:05 EDT | 3d 2h (same PID 27128) / 69 markets entered, all settled (70 entry fills) | 0 | 0 (file absent) | 0 / 16538 | 3 triggered, **0 filled** | Ledger $3.3313 == real $3.3313. No `suspect` lines, no `could not fetch exact cost`, no sync exceptions. Balance swings tracked exactly, including the -$2.69 loss on KXBTC15M-26SEP252000-00 (Sep 25 ~20:00). The 3 exit triggers (Sep 24 15:14 KXETH15M, Sep 25 13:59 KXETHD, Sep 25 19:59 KXBTC15M) each filled 0 contracts, so pair-redemption timing is **still unverified**. 0 inconclusive is expected: the exact-cost fetch runs in the same sync, before the check, so a check is only inconclusive when a fill races the balance snapshot. **Not a pass yet:** needs 100+ settled trades (~1.5 more days at ~22/day) and one exit that actually fills. |
+| 2026-09-26 01:35 EDT | Phase 2 restart at 01:24:39 (PID 41866, `f16bb50`, sizing ON) | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $3.3313 of real $3.3313, adopted 0 of 0`. No orders yet since the restart, so tagged-ID acceptance is still unconfirmed (see the caveat). |
 | | | | | | | |
