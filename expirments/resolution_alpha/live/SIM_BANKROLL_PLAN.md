@@ -115,7 +115,81 @@ journalctl -u resolution-alpha.service | grep sim-bankroll
 ## Phase 3: multiple models on one account
 
 Each experiment process builds its own `OrderManager` with its own allocation. The allocations must sum
-to no more than the account, with some unallocated reserve. What has to change:
+to no more than the account, with some unallocated reserve.
+
+### Built 2026-09-26 (resolution_alpha; everything new is off by default except the order tag)
+
+With a single runner and `SIM_BANKROLL_SHARED_ACCOUNT` off, behaviour is Phase 2's. The only live
+change is the order tag in `client_order_id`.
+
+- **Order tagging (on).** Every order's `client_order_id` is now `"<ORDER_TAG>-<uuid4 hex>"`, and the
+  tag defaults to `ra` (`RESOLUTION_ALPHA_ORDER_TAG`). Before, it was a bare `uuid4()`. That's the
+  only change in the order path, it's local, and it takes microseconds. The tag must be unique for
+  each runner on the account.
+- **Shared-account mode (`RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_ACCOUNT`, off).** When it's on:
+  - The runner's own check stops comparing against the real balance, since other runners move it
+    too. The status reads `shared`.
+  - It still books exact costs and its own settlements, and sizing still works as in Phase 2 (capped
+    at the real balance).
+  - **A restart resumes from this runner's own last status file**: cash, positions with their
+    `opened_ts`, pending exact costs, and the allocation epoch. It no longer re-allocates and adopts
+    every position on the account, which would include other runners' positions. Settlements that
+    land while it's down get applied at the first sync.
+  - A **fresh** ledger in shared mode adopts no account positions. So switch a runner into shared
+    mode while it's flat.
+  - Two runners running the same experiment code each need their own `RESOLUTION_ALPHA_LOG_DIR`,
+    since the status file is the resume state.
+- **The status file is richer:** `order_tag`, `instance_id`, `allocation_epoch`, `resumed_from`,
+  `fill_seq`, `recent_order_ids` (the last 24h of booked orders), and pending exact costs.
+- **`account_reconciler.py`.** A standalone, read-only process that implements item 2 below except
+  for correcting ledgers. It:
+  - reads every runner's status file and the real balance;
+  - checks `sum(Δ ledger cash) == Δ real balance`;
+  - needs a gap to show twice, unchanged and with no fill in between, before it counts;
+  - re-baselines when the set of ledgers changes or a ledger is freshly re-allocated (a new
+    `allocation_epoch`);
+  - skips the check when a status file is stale or has an exact cost pending;
+  - warns about tickers held by more than one runner (item 3).
+  - On a confirmed divergence, `attribute()` lists the evidence: filled orders whose tag matches a
+    ledger that never booked them, filled orders with no known tag (a manual or outside trade), and
+    the tickers that settled in the window along with who held them.
+  - It writes `account_reconciler.json` and `account_reconciler_divergences.jsonl` to `LOG_DIR`.
+  - **It reports only.** It never corrects a runner's ledger.
+
+  ```
+  # one check on the Pi (the first check only sets the baseline):
+  ../../.venv/bin/python account_reconciler.py --count 2 --interval 20
+  # several runners:
+  ../../.venv/bin/python account_reconciler.py --ledger /path/a/sim_bankroll.json --ledger /path/b/sim_bankroll.json
+  ```
+
+  To run it continuously, make it a systemd service. It isn't installed. It needs no restart
+  coordination with the runners:
+
+  ```
+  [Service]
+  WorkingDirectory=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha
+  ExecStart=/home/wetoyo/prediction-market-experiments/.venv/bin/python -u account_reconciler.py --interval 30
+  Restart=on-failure
+  ```
+
+### Still open
+
+- **Correcting a ledger across processes.** A confirmed account divergence re-baselines and gets
+  logged, but the runner at fault keeps its wrong cash. Next step: the reconciler writes a
+  correction (`instance_id`, id, delta) into that runner's log dir, and the runner applies it once
+  at its next sync. Only do this after `attribute()` has been checked against real payloads (next
+  item).
+- **Unverified:** that `GET /portfolio/orders` records carry `client_order_id` and `ticker`. It's a
+  documented field, but this account's order payloads haven't been inspected for it. Attribution
+  depends on it; the summed check doesn't. It's also unverified that Kalshi accepts a tagged
+  `client_order_id`, but the format is the same character set and length as the uuid it replaces.
+- **The other experiments.** `btc_implied_prob` and `golf_field_alpha` on this branch predate the
+  ledger (they still read the cents `balance` field). Each needs `sim_bankroll` and this wiring before
+  it trades beside resolution_alpha. The main sync is a prerequisite.
+- Items 3 to 6 below still apply as written.
+
+### Original design notes
 
 1. **Attributing fills without shared state.** Pass
    `client_order_id=f"{EXPERIMENT_NAME}-{uuid4()}"` (`place_order` already accepts it). Any process can

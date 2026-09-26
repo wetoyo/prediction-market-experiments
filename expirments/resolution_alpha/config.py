@@ -557,6 +557,16 @@ SIM_BANKROLL_TOLERANCE_DOLLARS = _float_env("RESOLUTION_ALPHA_SIM_BANKROLL_TOLER
 # divergence check + resync keep running as the safety net. Needs
 # SIM_BANKROLL_ENABLED; ignored (real balance, with a warning) without it.
 SIZE_FROM_SIM_BANKROLL = _bool_env("RESOLUTION_ALPHA_SIZE_FROM_SIM_BANKROLL", False)
+# Phase 3 (live/SIM_BANKROLL_PLAN.md): several runners on one account. Every
+# order carries client_order_id "<ORDER_TAG>-<uuid>" so any process can tell
+# which runner placed it; ORDER_TAG must be unique per runner on the account.
+# With SHARED_ACCOUNT on, the per-runner check above stops comparing against
+# the real balance (other runners move it too) -- account_reconciler.py checks
+# the sum of every runner's ledger instead -- and a restart resumes this
+# ledger from its own last status file instead of re-allocating and adopting
+# every open position on the account. Off = the single-runner behaviour.
+ORDER_TAG = _str_env("RESOLUTION_ALPHA_ORDER_TAG", "ra")
+SIM_BANKROLL_SHARED_ACCOUNT = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_ACCOUNT", False)
 
 # How often to re-evaluate active markets and poll spot prices, in seconds.
 POLL_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_POLL_INTERVAL_SECONDS", 2.0)

@@ -44,9 +44,14 @@ fetch is a legitimate one-poll transient, not drift.
 import logging
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 
 logger = logging.getLogger("resolution_alpha.sim_bankroll")
+
+# Booked order ids are kept this long, for account_reconciler.py to tell
+# which tagged account orders this ledger has (and hasn't) seen.
+RECENT_ORDER_ID_TTL_SECONDS = 24 * 3600
 
 
 @dataclass
@@ -85,12 +90,18 @@ class SimulatedBankroll:
         self.tolerance_dollars = tolerance_dollars
         self._lock = threading.Lock()
 
+        self.instance_id = uuid.uuid4().hex[:12]
+        # Set on a fresh allocation, carried through resume(): a new epoch
+        # tells account_reconciler.py to re-baseline, a resumed one doesn't.
+        self.allocation_epoch: str | None = None
+        self.resumed_from: str | None = None
         self.initialized = False
         self.cash = 0.0
         self.offset = 0.0  # cash - real_balance at the last sync
         self.positions: dict[str, _Position] = {}
         self.pending_exact: dict[str, dict] = {}  # order_id -> {"ticker", "side", "cost", "count"}
         self.fill_seq = 0  # bumped on every booked fill; lets check() spot a fill racing the balance snapshot
+        self.recent_order_ids: dict[str, float] = {}  # order_id -> booked ts
 
         self.checks = 0
         self.inconclusive_checks = 0
@@ -124,6 +135,32 @@ class SimulatedBankroll:
             for ticker, (side, contracts) in (open_positions or {}).items():
                 pos = self.positions.setdefault(ticker, _Position())
                 setattr(pos, side, getattr(pos, side) + contracts)
+            self.allocation_epoch = self.instance_id
+            self.initialized = True
+            return self.cash
+
+    def resume(self, state: dict, real_balance: float, fill_seq_at_balance: int) -> float | None:
+        """Shared-account restart: carry on from this ledger's own last
+        snapshot() (cash, positions, pending exact costs, allocation epoch)
+        instead of re-allocating off the real balance and adopting every
+        position on the account -- other runners' positions included.
+        Settlements that landed while the process was down are picked up by
+        the next sync (positions keep their opened_ts). Returns None (retry
+        next sync) if a fill landed after `real_balance` was fetched."""
+        with self._lock:
+            if self.fill_seq != fill_seq_at_balance:
+                return None
+            self.cash = float(state["sim_cash"])
+            self.offset = self.cash - real_balance
+            for ticker, row in (state.get("open_positions") or {}).items():
+                self.positions[ticker] = _Position(
+                    yes=float(row.get("yes", 0.0)), no=float(row.get("no", 0.0)),
+                    opened_ts=float(row.get("opened_ts") or time.time()),
+                )
+            self.pending_exact = dict(state.get("pending_exact") or {})
+            self.recent_order_ids = dict(state.get("recent_order_ids") or {})
+            self.allocation_epoch = state.get("allocation_epoch") or self.instance_id
+            self.resumed_from = state.get("instance_id")
             self.initialized = True
             return self.cash
 
@@ -178,6 +215,11 @@ class SimulatedBankroll:
             order_id = order_response.get("order_id")
             if order_id:
                 self.pending_exact[order_id] = {"ticker": ticker, "side": side, "cost": cost, "count": count}
+                now = time.time()
+                self.recent_order_ids[order_id] = now
+                cutoff = now - RECENT_ORDER_ID_TTL_SECONDS
+                for old_id in [i for i, ts in self.recent_order_ids.items() if ts < cutoff]:
+                    del self.recent_order_ids[old_id]
         return count
 
     def apply_exact_cost(self, order_id: str, order: dict) -> None:
@@ -274,12 +316,20 @@ class SimulatedBankroll:
         with self._lock:
             return {
                 "initialized": self.initialized,
+                "instance_id": self.instance_id,
+                "allocation_epoch": self.allocation_epoch,
+                "resumed_from": self.resumed_from,
                 "allocation_dollars": self.allocation_dollars,
                 "allocation_fraction": self.allocation_fraction,
                 "sim_cash": round(self.cash, 6),
                 "offset": round(self.offset, 6),
-                "open_positions": {t: {"yes": p.yes, "no": p.no} for t, p in self.positions.items()},
+                "fill_seq": self.fill_seq,
+                "open_positions": {
+                    t: {"yes": p.yes, "no": p.no, "opened_ts": p.opened_ts} for t, p in self.positions.items()
+                },
                 "pending_exact_orders": len(self.pending_exact),
+                "pending_exact": {i: dict(p) for i, p in self.pending_exact.items()},
+                "recent_order_ids": dict(self.recent_order_ids),
                 "checks": self.checks,
                 "inconclusive_checks": self.inconclusive_checks,
                 "divergence_count": self.divergence_count,

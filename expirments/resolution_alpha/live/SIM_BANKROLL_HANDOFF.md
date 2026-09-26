@@ -24,6 +24,12 @@ systemctl show resolution-alpha.service -p ActiveEnterTimestamp
   - With the fraction at 1.0, sizing should match today's to within $0.01, since the ledger has
     tracked the real balance exactly.
   - Keep checking `divergence_count`. It's now a live safety net, not just a measurement.
+- Phase 3 pieces are also on the branch (see the plan, Phase 3, "Built 2026-09-26").
+  - Orders are tagged `ra-<uuid>`. This is live after the next restart and is the only behaviour
+    change.
+  - Shared-account mode is behind `RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_ACCOUNT` (off).
+  - `account_reconciler.py` is read-only. Running it now, with one runner, duplicates the runner's
+    own check, which is a good way to validate it before a second model exists.
 
 ---
 

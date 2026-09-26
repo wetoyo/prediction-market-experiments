@@ -56,11 +56,12 @@ import json
 import logging
 import os
 import time
+import uuid
 
 import config
 from config import DRY_RUN
 from kalshi_gateway import KalshiTradingClient
-from sim_bankroll import SimulatedBankroll
+from sim_bankroll import CheckResult, SimulatedBankroll
 
 logger = logging.getLogger("resolution_alpha.order_manager")
 
@@ -119,6 +120,8 @@ class OrderManager:
     # (tests/test_order_manager.py's TestPlaceOrderWiring) has no ledger.
     _sim: SimulatedBankroll | None = None
     _size_from_sim = False
+    _shared_account = False
+    order_tag = config.ORDER_TAG
     _balance_snapshot: tuple[float, int] | None = None
     _checks_since_status_log = 0
 
@@ -128,14 +131,23 @@ class OrderManager:
         allocation_dollars: float | None = config.SIM_BANKROLL_ALLOCATION_DOLLARS,
         allocation_fraction: float = config.SIM_BANKROLL_ALLOCATION_FRACTION,
         size_from_sim: bool = config.SIZE_FROM_SIM_BANKROLL,
+        shared_account: bool = config.SIM_BANKROLL_SHARED_ACCOUNT,
+        order_tag: str = config.ORDER_TAG,
     ):
         """`allocation_dollars` (when > 0) or else `allocation_fraction` of the
         real balance is this manager's slice of the account, tracked by its
         own simulated bankroll (sim_bankroll.py). With `size_from_sim` off
         (the default) that ledger is shadow only: get_balance_dollars returns
         the real account balance. With it on, get_balance_dollars returns the
-        ledger's cash, capped at the real balance -- see sync_sim_bankroll."""
+        ledger's cash, capped at the real balance -- see sync_sim_bankroll.
+
+        `order_tag` prefixes every order's client_order_id; `shared_account`
+        switches to the several-runners-per-account mode (config.py,
+        SIM_BANKROLL_SHARED_ACCOUNT)."""
+        if not order_tag or "-" in order_tag:
+            raise ValueError(f"ORDER_TAG {order_tag!r} must be non-empty with no '-' (it's split off at the first '-')")
         self.dry_run = dry_run
+        self.order_tag = order_tag
         self._client = None
         if not dry_run:
             self._client = KalshiTradingClient()
@@ -144,6 +156,7 @@ class OrderManager:
                     allocation_dollars, allocation_fraction, config.SIM_BANKROLL_TOLERANCE_DOLLARS,
                 )
                 self._size_from_sim = size_from_sim
+                self._shared_account = shared_account
             elif size_from_sim:
                 logger.warning(
                     "SIZE_FROM_SIM_BANKROLL is on but SIM_BANKROLL_ENABLED is off -- sizing off the real balance"
@@ -197,20 +210,7 @@ class OrderManager:
         sim = self._sim
         real_balance, fill_seq_at_balance = self._balance_snapshot
         if not sim.initialized:
-            adopted = {}
-            for row in self._client.get_positions().get("market_positions", []):
-                position = float(row.get("position_fp") or 0.0)
-                if position:
-                    adopted[row["ticker"]] = ("yes" if position > 0 else "no", abs(position))
-            cash = sim.initialize(real_balance, fill_seq_at_balance, adopted)
-            if cash is None:
-                return  # a fill raced the balance snapshot; retry on the next refresh
-            _log_despite_lightweight_mode(
-                logging.INFO,
-                "[sim-bankroll] initialized (%s): sim $%.4f of real $%.4f, adopted %d open position(s)",
-                "SIZING off it" if self._size_from_sim else "shadow only", cash, real_balance, len(adopted),
-            )
-            self._write_sim_status(None)
+            self._initialize_sim(real_balance, fill_seq_at_balance)
             return
 
         for order_id in list(sim.pending_exact):
@@ -237,7 +237,15 @@ class OrderManager:
                 if not cursor:
                     break
 
-        result = sim.check(real_balance, fill_seq_at_balance)
+        if self._shared_account:
+            # Other runners move the real balance too; account_reconciler.py
+            # checks the sum of every runner's ledger against it instead.
+            result = CheckResult(
+                "shared", sim_cash=sim.cash, real_balance=real_balance,
+                reason="per-runner check off in shared-account mode; see account_reconciler.py",
+            )
+        else:
+            result = sim.check(real_balance, fill_seq_at_balance)
         if result.status == "diverged":
             _log_despite_lightweight_mode(
                 logging.WARNING,
@@ -260,8 +268,65 @@ class OrderManager:
             )
         self._write_sim_status(result)
 
+    def _initialize_sim(self, real_balance: float, fill_seq_at_balance: int) -> None:
+        sim = self._sim
+        mode = "SIZING off it" if self._size_from_sim else "shadow only"
+        if self._shared_account:
+            previous = self._read_previous_status()
+            if previous is not None:
+                cash = sim.resume(previous, real_balance, fill_seq_at_balance)
+                if cash is None:
+                    return  # a fill raced the balance snapshot; retry on the next refresh
+                _log_despite_lightweight_mode(
+                    logging.INFO,
+                    "[sim-bankroll] resumed (%s, shared account, tag %r) from instance %s: sim $%.4f, "
+                    "%d open position(s), real account $%.4f",
+                    mode, self.order_tag, sim.resumed_from, cash, len(sim.positions), real_balance,
+                )
+                self._write_sim_status(None)
+                return
+        adopted = {}
+        account_positions = 0
+        for row in self._client.get_positions().get("market_positions", []):
+            position = float(row.get("position_fp") or 0.0)
+            if position:
+                account_positions += 1
+                adopted[row["ticker"]] = ("yes" if position > 0 else "no", abs(position))
+        if self._shared_account and adopted:
+            # The account's positions may be other runners'. A fresh ledger on
+            # a shared account starts flat -- switch into shared mode while flat.
+            logger.warning(
+                "[sim-bankroll] fresh ledger on a shared account: NOT adopting %d open account position(s) "
+                "(they may be another runner's)", len(adopted),
+            )
+            adopted = {}
+        cash = sim.initialize(real_balance, fill_seq_at_balance, adopted)
+        if cash is None:
+            return  # a fill raced the balance snapshot; retry on the next refresh
+        _log_despite_lightweight_mode(
+            logging.INFO,
+            "[sim-bankroll] initialized (%s%s): sim $%.4f of real $%.4f, adopted %d of %d open position(s)",
+            mode, f", shared account, tag {self.order_tag!r}" if self._shared_account else "",
+            cash, real_balance, len(adopted), account_positions,
+        )
+        self._write_sim_status(None)
+
+    def _read_previous_status(self) -> dict | None:
+        """This runner's last status file, if it's a ledger to resume from
+        (initialized, and written under the same order tag)."""
+        try:
+            with open(config.SIM_BANKROLL_STATUS_PATH) as fh:
+                state = json.load(fh)
+        except (OSError, ValueError):
+            return None
+        if not state.get("initialized") or state.get("order_tag") != self.order_tag or "sim_cash" not in state:
+            return None
+        return state
+
     def _write_sim_status(self, result) -> None:
         status = self._sim.snapshot()
+        status["order_tag"] = self.order_tag
+        status["shared_account"] = self._shared_account
         status["updated_ts"] = time.time()
         if result is not None:
             status["last_check"] = {
@@ -350,6 +415,9 @@ class OrderManager:
         response = self._client.place_order(
             ticker=ticker, side=api_side, count=count_str, price=price_str,
             time_in_force=time_in_force, exchange_index=exchange_index, reduce_only=reduce_only,
+            # "<tag>-<uuid>": lets any process attribute this order (and its
+            # fills) to this runner from the account's order history alone.
+            client_order_id=f"{self.order_tag}-{uuid.uuid4().hex}",
         )
         if self._sim is not None:
             # Post-fill bookkeeping only -- the order is already done, and a

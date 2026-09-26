@@ -150,6 +150,29 @@ class TestCheck:
         assert sim.initialize(8.5317, sim.fill_seq) == pytest.approx(8.5317)
 
 
+class TestResume:
+    def test_snapshot_round_trips_through_resume(self):
+        sim = _ready(10.0, allocation_dollars=6.0)
+        sim.record_fill(TICKER, "no", _post_response())  # leaves an exact cost pending
+        state = json.loads(json.dumps(sim.snapshot()))
+        resumed = SimulatedBankroll(allocation_dollars=6.0)
+        assert resumed.resume(state, 8.53, resumed.fill_seq) == pytest.approx(sim.cash)
+        assert resumed.allocation_epoch == sim.allocation_epoch and resumed.resumed_from == sim.instance_id
+        assert resumed.positions[TICKER].no == 2.0
+        assert resumed.positions[TICKER].opened_ts == sim.positions[TICKER].opened_ts
+        resumed.apply_exact_cost("o1", _get_order())
+        sim.apply_exact_cost("o1", _get_order())
+        assert resumed.cash == pytest.approx(sim.cash)
+
+    def test_old_order_ids_are_pruned(self, monkeypatch):
+        import sim_bankroll
+        sim = _ready(10.0)
+        sim.record_fill(TICKER, "no", _post_response(order_id="old"))
+        sim.recent_order_ids["old"] -= sim_bankroll.RECENT_ORDER_ID_TTL_SECONDS + 1
+        sim.record_fill(TICKER, "no", _post_response(order_id="new"))
+        assert set(sim.recent_order_ids) == {"new"}
+
+
 class TestSizingCash:
     def test_before_init_is_the_coming_allocation(self):
         sim = SimulatedBankroll(allocation_fraction=0.25)
