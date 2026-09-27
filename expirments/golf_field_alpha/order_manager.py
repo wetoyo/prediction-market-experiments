@@ -41,6 +41,7 @@ from kalshi_gateway import KalshiTradingClient
 _SHARED_DIR = str(Path(__file__).resolve().parents[1] / "shared")
 if _SHARED_DIR not in sys.path:
     sys.path.append(_SHARED_DIR)
+import allocation_guard  # noqa: E402
 from tagged_ledger import TaggedLedger, real_balance_dollars  # noqa: E402
 
 logger = logging.getLogger("golf_field_alpha.order_manager")
@@ -68,6 +69,22 @@ class OrderManager:
         if not dry_run:
             self._client = KalshiTradingClient()
             if config.SIM_BANKROLL_ENABLED:
+                guard = None
+                if allocation_guard.enabled():
+                    # Registers this runner on the account; checked before the
+                    # ledger takes a fresh allocation (shared/allocation_guard.py).
+                    guard = allocation_guard.AllocationGuard(
+                        config.ORDER_TAG, config.SIM_BANKROLL_STATUS_PATH, config.SIM_BANKROLL_ALLOCATION_DOLLARS,
+                        config.SIM_BANKROLL_ALLOCATION_FRACTION, config.SIM_BANKROLL_SHARED_ACCOUNT,
+                        tolerance_dollars=config.SIM_BANKROLL_TOLERANCE_DOLLARS,
+                    )
+                    try:
+                        warning = guard.register()
+                        if warning:
+                            logger.error("[allocation-guard] %s", warning)
+                    except OSError:
+                        logger.error("[allocation-guard] could not register in %s -- other runners on the account "
+                                     "won't see this one's claim", guard.registry)
                 self.ledger = TaggedLedger(
                     self._client,
                     order_tag=config.ORDER_TAG,
@@ -80,6 +97,7 @@ class OrderManager:
                     tolerance_dollars=config.SIM_BANKROLL_TOLERANCE_DOLLARS,
                     allow_fresh_allocation=config.SIM_BANKROLL_ALLOW_FRESH_ALLOCATION,
                     env_prefix="GOLF_FIELD_ALPHA_",
+                    guard=guard,
                     logger=logging.getLogger("golf_field_alpha.ledger"),
                 )
             elif config.SIZE_FROM_SIM_BANKROLL:
@@ -105,6 +123,8 @@ class OrderManager:
         `balance_dollars` wasn't, which is no longer true.
         """
         balance = real_balance_dollars(self._client.get_balance())
+        if self.ledger is not None and self.ledger.trading_blocked():
+            return 0.0  # the allocation guard refused: taking it would over-commit the account
         if self.ledger is not None and self.ledger.size_from_sim:
             return self.ledger.sizing_cash(balance)
         return balance

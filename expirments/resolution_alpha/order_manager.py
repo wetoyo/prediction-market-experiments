@@ -68,6 +68,7 @@ from kalshi_gateway import KalshiTradingClient
 _SHARED_DIR = str(Path(__file__).resolve().parents[1] / "shared")
 if _SHARED_DIR not in sys.path:
     sys.path.append(_SHARED_DIR)
+import allocation_guard  # noqa: E402
 from profit_skim import ProfitSkimmer  # noqa: E402
 from sim_bankroll import CheckResult, SimulatedBankroll  # noqa: E402
 
@@ -128,6 +129,9 @@ class OrderManager:
     # (tests/test_order_manager.py's TestPlaceOrderWiring) has no ledger.
     _sim: SimulatedBankroll | None = None
     _skimmer: ProfitSkimmer | None = None
+    _guard: "allocation_guard.AllocationGuard | None" = None
+    _guard_refusal: str | None = None
+    _guard_logged_at = 0.0
     _size_from_sim = False
     _shared_account = False
     order_tag = config.ORDER_TAG
@@ -172,6 +176,20 @@ class OrderManager:
                 )
                 self._size_from_sim = size_from_sim
                 self._shared_account = shared_account
+                if allocation_guard.enabled():
+                    self._guard = allocation_guard.AllocationGuard(
+                        order_tag, config.SIM_BANKROLL_STATUS_PATH, allocation_dollars, allocation_fraction,
+                        shared_account, tolerance_dollars=config.SIM_BANKROLL_TOLERANCE_DOLLARS,
+                    )
+                    try:
+                        warning = self._guard.register()
+                        if warning:
+                            _log_despite_lightweight_mode(logging.ERROR, "[allocation-guard] %s", warning)
+                    except OSError:
+                        _log_despite_lightweight_mode(
+                            logging.ERROR, "[allocation-guard] could not register in %s -- other runners on the "
+                            "account won't see this one's claim", self._guard.registry,
+                        )
                 if config.PROFIT_SKIM_ENABLED:
                     self._skimmer = ProfitSkimmer(
                         config.PROFIT_SKIM_RULES_PATH, config.PROFIT_SKIM_STATE_PATH, config.PROFIT_SKIM_LOG_PATH,
@@ -208,10 +226,13 @@ class OrderManager:
         if self._sim is None:
             return balance
         self._balance_snapshot = (balance, self._sim.fill_seq)
+        if self._guard_refusal is not None:
+            return 0.0  # the allocation guard refused: taking it would over-commit the account
         if self._size_from_sim:
-            if self._shared_account and not self._sim.initialized:
-                # Not resumed yet (or refusing a fresh allocation): the real
-                # balance is other runners' money too -- don't trade.
+            if not self._sim.initialized and (self._shared_account or self._guard is not None):
+                # Not resumed yet, or the allocation hasn't passed the guard
+                # yet (the first sync, ~15s): the real balance may be other
+                # runners' money too -- don't trade.
                 return 0.0
             return self._sim.sizing_cash(balance)
         return balance
@@ -317,6 +338,28 @@ class OrderManager:
         mode = "SIZING off it" if self._size_from_sim else "shadow only"
         if self._shared_account:
             previous, why_not = self._read_previous_status()
+            if previous is not None and not previous.get("shared_account"):
+                # Switching into shared mode: the single-runner ledger claimed
+                # the whole account, so start this one fresh at its fixed
+                # allocation instead of resuming that claim. Only while flat:
+                # a fresh shared ledger adopts no positions. Until now this
+                # runner was alone, so every account position is its own.
+                open_now = sum(
+                    1 for row in self._client.get_positions().get("market_positions", [])
+                    if float(row.get("position_fp") or 0.0)
+                )
+                if open_now:
+                    self._refuse_allocation(
+                        f"switching into shared mode with {open_now} open position(s) on the account -- waiting "
+                        "for them to settle"
+                    )
+                    return
+                self._guard_refusal = None
+                logger.warning("[sim-bankroll] switching into shared-account mode: fresh allocation "
+                               "(the single-runner ledger's state is not resumed)")
+                previous = None
+            elif previous is None and not self._fresh_allocation_allowed(why_not):
+                return  # stays uninitialized: get_balance_dollars sizes 0
             if previous is not None:
                 # Fills booked in memory after the last status write died
                 # with the old process; the account's order history has them.
@@ -332,10 +375,24 @@ class OrderManager:
                     mode, self.order_tag, sim.resumed_from, cash, len(sim.positions), sim.recovered_orders,
                     real_balance,
                 )
+                if self._guard is not None:
+                    # Its money is already its own: warn, don't refuse (that
+                    # would strand its open positions).
+                    ok, breakdown = self._guard.check(cash + sim.reserve, real_balance)
+                    if not ok:
+                        _log_despite_lightweight_mode(
+                            logging.ERROR, "[allocation-guard] account OVER-COMMITTED after resume: %s", breakdown,
+                        )
                 self._write_sim_status(None)
                 return
-            if not self._fresh_allocation_allowed(why_not):
-                return  # stays uninitialized: get_balance_dollars sizes 0
+        if self._guard is not None:
+            ok, breakdown = self._guard.check(sim.fresh_claim(real_balance), real_balance)
+            if not ok:
+                self._refuse_allocation(f"taking this allocation would over-commit the account: {breakdown}")
+                return
+            if self._guard_refusal is not None:
+                _log_despite_lightweight_mode(logging.WARNING, "[allocation-guard] allocation now fits: %s", breakdown)
+            self._guard_refusal = None
         adopted = {}
         account_positions = 0
         for row in self._client.get_positions().get("market_positions", []):
@@ -361,6 +418,20 @@ class OrderManager:
             cash, real_balance, len(adopted), account_positions,
         )
         self._write_sim_status(None)
+
+    def _refuse_allocation(self, reason: str) -> None:
+        """Stay uninitialized and size $0; the next sync tries again. Used
+        by the allocation guard and the switch into shared mode."""
+        self._guard_refusal = reason
+        now = time.time()
+        if now - self._guard_logged_at >= 900:
+            self._guard_logged_at = now
+            _log_despite_lightweight_mode(
+                logging.ERROR,
+                "[allocation-guard] NOT TRADING: %s. Lower an allocation (*_SIM_BANKROLL_ALLOCATION_DOLLARS), retire "
+                "a runner (python ../shared/allocation_guard.py remove <tag>), or lower %s. Retrying every sync.",
+                reason, allocation_guard.MIN_UNALLOCATED_ENV,
+            )
 
     def _read_previous_status(self) -> tuple[dict | None, str]:
         """This runner's last status file if it's a ledger to resume from

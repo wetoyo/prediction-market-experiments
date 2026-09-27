@@ -254,6 +254,12 @@ class SimulatedBankroll:
         # The reserve is in the real balance but no longer this runner's to trade.
         return max(0.0, real_balance - self.reserve) * self.allocation_fraction
 
+    def fresh_claim(self, real_balance: float) -> float:
+        """What initialize() would claim of the account right now: the
+        allocation plus the reserve (allocation_guard.py checks it)."""
+        with self._lock:
+            return self._allocation(real_balance) + self.reserve
+
     def _available(self) -> float:
         """Cash not reserved by a resting order. Caller holds the lock."""
         return self.cash - sum(self.holds.values())

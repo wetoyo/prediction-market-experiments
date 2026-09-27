@@ -115,9 +115,12 @@ class TaggedLedger:
         fresh_allocation_lookback_seconds: float = 14 * 86400,
         env_prefix: str = "",
         logger: logging.Logger | None = None,
+        guard=None,
     ):
         """`client`: a KalshiTradingClient. `env_prefix` only makes log lines
-        name the right env vars (e.g. "GOLF_FIELD_ALPHA_")."""
+        name the right env vars (e.g. "GOLF_FIELD_ALPHA_"). `guard`: an
+        allocation_guard.AllocationGuard (already registered), checked
+        before a fresh allocation; None skips the check."""
         if not order_tag or "-" in order_tag or len(order_tag) > MAX_TAG_LENGTH:
             raise ValueError(
                 f"ORDER_TAG {order_tag!r} must be 1-{MAX_TAG_LENGTH} characters with no '-' "
@@ -150,6 +153,9 @@ class TaggedLedger:
         self._syncs_since_status_log = 0
         self._refusal_logged_at = 0.0
         self._collision_logged_at = 0.0
+        self.guard = guard
+        self.guard_refusal: str | None = None
+        self._guard_logged_at = 0.0
 
     # -- order path (the strategy's thread) ------------------------------------
 
@@ -161,11 +167,17 @@ class TaggedLedger:
 
     def sizing_cash(self, real_balance: float) -> float:
         """What the strategy may size off (SIZE_FROM_SIM_BANKROLL on)."""
-        if self.shared_account and not self.sim.initialized:
-            # Not resumed yet (or refusing a fresh allocation): the real
-            # balance is other runners' money too -- don't trade.
+        if self.trading_blocked() or (not self.sim.initialized and (self.shared_account or self.guard is not None)):
+            # Not resumed yet, refusing a fresh allocation, or the allocation
+            # hasn't passed the guard yet: the real balance may be other
+            # runners' money too -- don't trade.
             return 0.0
         return self.sim.sizing_cash(real_balance)
+
+    def trading_blocked(self) -> bool:
+        """The allocation guard refused this runner's allocation: size $0
+        even with SIZE_FROM_SIM_BANKROLL off."""
+        return self.guard_refusal is not None
 
     def order_allowed(self, ticker: str, side: str, contracts: float, worst_cost: float) -> tuple[bool, str]:
         """With SIZE_FROM_SIM_BANKROLL on, an order must fit in this ledger's
@@ -403,14 +415,41 @@ class TaggedLedger:
         mode = "SIZING off it" if self.size_from_sim else "shadow only"
         if self.shared_account:
             previous, why_not = self._read_previous_status()
-            if previous is not None:
+            if previous is not None and not previous.get("shared_account"):
+                # Switching into shared mode: the single-runner ledger claimed
+                # the whole account; start fresh at the fixed allocation. Only
+                # while flat: a fresh shared ledger adopts no positions or
+                # resting orders. Until now this runner was alone on the
+                # account, so everything open there is its own.
+                open_now = sum(
+                    1 for row in self._client.get_positions().get("market_positions", [])
+                    if _f(row.get("position_fp"))
+                ) + len(self._list_orders(status="resting"))
+                if open_now:
+                    self._refuse_allocation(
+                        f"switching into shared mode with {open_now} open position(s)/resting order(s) on the "
+                        "account -- waiting for them to settle or be canceled"
+                    )
+                    return
+                self.guard_refusal = None
+                self.log.warning("[sim-bankroll] switching into shared-account mode: fresh allocation "
+                                 "(the single-runner ledger's state is not resumed)")
+            elif previous is not None:
                 self._resume(previous, mode)
                 return
-            if not self._fresh_allocation_allowed(why_not):
+            elif not self._fresh_allocation_allowed(why_not):
                 return  # stays uninitialized: sizing_cash is 0, order_allowed refuses
 
         fill_seq = self.sim.fill_seq
         real_balance = self._real_balance()
+        if self.guard is not None:
+            ok, breakdown = self.guard.check(self.sim.fresh_claim(real_balance), real_balance)
+            if not ok:
+                self._refuse_allocation(f"taking this allocation would over-commit the account: {breakdown}")
+                return
+            if self.guard_refusal is not None:
+                self.log.warning("[allocation-guard] allocation now fits: %s", breakdown)
+            self.guard_refusal = None
         adopted: dict[str, tuple[str, float]] = {}
         account_positions = 0
         for row in self._client.get_positions().get("market_positions", []):
@@ -479,9 +518,27 @@ class TaggedLedger:
             mode, self.order_tag, self.sim.resumed_from, cash, len(self.sim.positions), len(self.tracked),
             recovered, real_balance,
         )
+        if self.guard is not None:
+            # Its money is already its own: warn, don't refuse (that would
+            # strand its open positions).
+            ok, breakdown = self.guard.check(cash + self.sim.reserve, real_balance)
+            if not ok:
+                self.log.error("[allocation-guard] account OVER-COMMITTED after resume: %s", breakdown)
         # Recovered orders' fills are booked right away, not a sync later.
         self._update_tracked_orders()
         self._write_status(None)
+
+    def _refuse_allocation(self, reason: str) -> None:
+        """Stay uninitialized and size $0; the next sync tries again."""
+        self.guard_refusal = reason
+        now = time.time()
+        if now - self._guard_logged_at >= 900:
+            self._guard_logged_at = now
+            self.log.error(
+                "[allocation-guard] NOT TRADING: %s. Lower an allocation (%sSIM_BANKROLL_ALLOCATION_DOLLARS), retire "
+                "a runner (python ../shared/allocation_guard.py remove <tag>), or lower KALSHI_MIN_UNALLOCATED_DOLLARS."
+                " Retrying every sync.", reason, self.env_prefix,
+            )
 
     def _read_previous_status(self) -> tuple[dict | None, str]:
         try:

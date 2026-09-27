@@ -57,6 +57,48 @@ its own dollar allocation.
 - Fixed a golf bug: live runs sized off the $1000 dry-run balance.
 - Added `BTC_IMPLIED_PROB_EXCLUDE_SERIES`.
 
+## Allocation guard (added 2026-09-27)
+
+Nothing sits between the runners in the order path, on purpose (see the plan's "Why"). Before this
+guard, each runner stayed inside its own ledger, but nothing checked that the allocations *together*
+fit the account. Three $5 allocations on a $13 account would only have been caught when Kalshi
+rejected whichever orders came last. `shared/allocation_guard.py` closes that gap, and it's wired
+into all three runners.
+
+- **Registration.** Every live runner with a ledger registers at startup in `shared/runners.d/<tag>.json`
+  (gitignored; `KALSHI_RUNNER_REGISTRY_DIR` overrides it). The entry records the runner's status
+  file, its allocation and its mode.
+- **The check.** Before a **fresh** allocation, a runner adds up every other registered runner's
+  claim, plus its own, and compares the total against the real balance minus
+  `KALSHI_MIN_UNALLOCATED_DOLLARS` (default 0).
+  - A peer's claim is its status file's `sim_cash + reserve`.
+  - A peer that hasn't initialized claims its configured allocation.
+  - A single-runner-mode runner claims the whole balance.
+- **Refusal.** If the total is over, the runner sizes $0 and logs `[allocation-guard] NOT TRADING: ...`
+  with the breakdown, at most every 15 min. It retries on every sync.
+  - A **resumed** ledger is only warned about. Its money is already its own, and refusing it would
+    strand its positions.
+- **It enforces the go-live order.** resolution_alpha registers in single-runner mode and claims
+  everything, so btc or golf can't start beside it until resolution_alpha is in shared mode with a
+  fixed allocation.
+- **Stopped runners stay registered**, because their ledgers resume with their cash. To retire one:
+  `python shared/allocation_guard.py remove <tag>`. To see every claim: `python shared/allocation_guard.py list`.
+- **Startup.** With the guard on, a runner sizes $0 until its first sync has initialized the ledger
+  (~15s at startup).
+- **Off switch.** `KALSHI_ALLOCATION_GUARD=false`. With it off, nothing registers either.
+
+**Fixed at the same time: the switch into shared mode.** Before, a shared-mode restart resumed any
+status file with the right tag, including one written in single-runner mode. That meant switching
+resolution_alpha resumed its claim on the whole balance and ignored `ALLOCATION_DOLLARS`. Now:
+- A single-runner status file is not resumed. The runner takes a fresh allocation instead, and
+  `ALLOW_FRESH_ALLOCATION` isn't needed.
+- It does so only while the account is flat: no positions (and for btc/golf, no resting orders).
+  Until then it refuses and retries every sync, so a restart mid-window just waits for the positions
+  to settle.
+
+The guard does **not** cover a runner whose ledger is wrong in the high direction. Its sizing is
+still capped only at the whole real balance, and only `account_reconciler.py` notices afterwards.
+
 ## Start here
 
 1. **Check the new resolution_alpha ID format.** This is read-only and safe while trading:
