@@ -336,3 +336,32 @@ class TestSizeFromSim:
     def test_off_by_default(self, om):
         _poll(om)
         assert om.get_balance_dollars() == pytest.approx(10.0)
+
+
+class TestProfitSkimWiring:
+    def test_skim_lowers_sizing_and_keeps_the_check_clean(self, om, tmp_path):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from profit_skim import ProfitSkimmer
+
+        rules = tmp_path / "rules.json"
+        rules.write_text(json.dumps({"rules": [{"name": "d", "at": "00:05", "fraction": 0.5}]}))
+        om._size_from_sim = True
+        om._skimmer = ProfitSkimmer(str(rules), str(tmp_path / "skim.json"), str(tmp_path / "skims.jsonl"),
+                                    str(tmp_path / "inbox.jsonl"))
+        _poll(om)  # initializes
+        _poll(om)  # skimmer sees the rule
+        om._sim.book_fill(TICKER, "no", 2, 0.0)  # (as if bought for free: +2.00 once it settles)
+        om._client.settle(_settlement(), 2.0)
+        _poll(om)
+        tomorrow = datetime.now(ZoneInfo("America/New_York")).timestamp() + 86400
+        om._skimmer.step(om._sim, now=tomorrow)
+        assert om._sim.reserve == pytest.approx(1.0)
+        assert om.get_balance_dollars() == pytest.approx(11.0)  # real 12.00 minus the $1 reserve
+        om.sync_sim_bankroll()
+        om.get_balance_dollars()
+        om.sync_sim_bankroll()
+        assert om._sim.divergence_count == 0
+        status = json.loads((tmp_path / "sim.json").read_text())
+        assert status["reserve"] == pytest.approx(1.0) and status["last_check"]["status"] == "ok"

@@ -7,7 +7,23 @@ this file covers *where things stand and what to do next*.
 
 ---
 
-## Start here (next session)
+## Start here (next session) -- updated 2026-09-27 ~13:10 EDT
+
+- **Order IDs `ra-<y|n>-<28 hex>` are accepted** (31 orders, 19 fills, 0 errors by 09-27 12:52). The
+  ledger is healthy: $12.9696 == real, 0 divergences. The Pi's checkout is on `2ed2f90`, so
+  resolution_alpha can restart safely.
+- **New feature: profit skimming** (`../../shared/profit_skim.py`, see "Profit skimming" below). The
+  owner's rule is 10% of each day's profit, run at 00:05 ET, and nothing on a losing day. It's
+  committed and deployed to the Pi's disk. **It runs only after a restart**, which needs the owner's OK.
+  After that restart:
+  - Look for `[profit-skim] loaded 1 rule(s)` in the journal.
+  - The next day, look for a `[profit-skim] daily-10pct:` line just after 00:05.
+  - Run `../../.venv/bin/python skim_ctl.py status`.
+  - `sim_bankroll.json` should show `reserve` > 0 and the check still `ok`.
+
+The 09-26 items below are done. The multi-runner decisions are still pending.
+
+### From 2026-09-26
 
 1. **Were the new-format order IDs (`ra-<y|n>-<28 hex>`) accepted?** The owner restarted the service
    onto `2fb9c95` at **14:37:48 EDT** (PID **45269**); the ledger re-initialized at $5.2971 with
@@ -181,6 +197,60 @@ and the mirror-image gap at settlement briefly under-sizes.
 
 ---
 
+## Profit skimming (added 2026-09-27)
+
+Kalshi has no withdrawal endpoint, so profit is "taken out" by moving it from the ledger's cash into
+its **reserve**. The reserve stays in the Kalshi account but is no longer sized off; the owner
+withdraws it on kalshi.com whenever they like.
+
+**Rules** live in `live/profit_skim_rules.json` (`RESOLUTION_ALPHA_PROFIT_SKIM_RULES_PATH`). The
+format and every field are in the module docstring of `../../shared/profit_skim.py`.
+- The runner reloads the file whenever it changes, with no restart.
+- An invalid file is rejected whole, and the previous rules stay in force.
+- After editing, run `skim_ctl.py check-rules`.
+
+The current rule is `daily-10pct`: 00:05 America/New_York, fraction 0.10, basis `period`.
+
+How the rules work:
+- **Profit** is the ledger's `trading_pnl`: fills, pair redemptions and settlements only. Skims,
+  withdrawals, divergence resyncs, deposits and restarts never count as profit.
+- **Periods.** Each rule accrues profit between its runs. A rule seen for the first time (including
+  on the restart that deploys it) accrues from that moment.
+- **Waiting for flat.** A rule waits past its time until the ledger holds no position. It runs anyway
+  after `max_wait_minutes` (180).
+- **Basis.** `period` forgets a losing day. `carry_losses` makes a loss be earned back first.
+
+How the reserve fits with the checks:
+- The per-runner check and `account_reconciler.py` compare **cash + reserve** against the real
+  balance, so a skim moves no gap.
+- On restart, the reserve comes from `live/logs/profit_skim.json`, so the new allocation
+  (`(real - reserve) × fraction`) doesn't re-absorb it. A fixed-dollar allocation ignores it.
+- In shared mode the reserve resumes from `sim_bankroll.json` instead.
+
+**Withdrawing:** run `skim_ctl.py withdraw <dollars>` **before** withdrawing exactly that amount on
+kalshi.com.
+- The check matches the balance drop and takes it out of the reserve first. Anything beyond the
+  reserve comes out of trading cash.
+- An undeclared withdrawal is read as a divergence, and the resync takes it out of **trading cash**.
+- Don't restart between declaring and the `withdrawal ... seen on the account` log line. A fresh
+  allocation after the drop can't tell the drop apart from the reserve.
+
+**Releasing:** `skim_ctl.py release <dollars>` moves money from the reserve back into trading cash.
+
+**Files** (all in `live/logs/`):
+- `profit_skim.json`: state (reserve, each rule's accrued profit and last run, finished inbox
+  entries).
+- `profit_skims.jsonl`: one event per skim, skip, withdrawal or release.
+- `profit_skim_inbox.jsonl`: written by `skim_ctl.py`.
+
+**Journal:** `journalctl -u resolution-alpha.service | grep profit-skim`.
+
+**Turning it off:** `RESOLUTION_ALPHA_PROFIT_SKIM_ENABLED=false`, then restart. Removing every rule
+from the file also stops skimming, and the reserve stays reserved. To hand the reserve back to
+trading, `release` it.
+
+---
+
 ## Where everything is
 
 | What | Where (under `expirments/resolution_alpha/`) |
@@ -341,4 +411,5 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 | 2026-09-26 01:48 EDT | 24 min since the Phase 2 restart / 0 new trades | 0 | 0 (file absent) | 0 / 88 | 0 | Owner went to sleep. Still no order since the restart, so tag acceptance is unconfirmed. Next session: see "Start here". |
 | 2026-09-26 14:35 EDT | 13h 11m since the Phase 2 restart (PID 41866) / 23 entry fills, all settled (no open positions) | 0 | 0 (file absent) | 0 / 2950 | 0 | **Tag accepted:** 40 `LIVE ORDER`s (all `ra-<hex>`, per `inspect_order_records.py`), 23 `entry filled`, the rest IOC 0-fills ("no marketable depth"), **0 HTTPError**. Ledger $5.2971 == real $5.2971 (up from $3.3313), gap ~1e-15, `fill_seq` 23. Phase 2 sizing is working: 1-4 contracts per order, `no_bankroll=0` in all 132 eval summaries. Only ERRORs: 2 ws keepalive-ping disconnects (03:11, 13:58), both auto-reconnected. |
 | 2026-09-26 14:38 EDT | Restart onto `24e28af` (incl. `2fb9c95`) at 14:37:48, PID 45269 | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $5.2971 of real $5.2971, adopted 0 of 0`. New ID format `ra-<y|n>-<28 hex>` not yet exercised (no order by 14:58). |
+| 2026-09-27 12:52 EDT | 22h 14m (PID 45269) / 19 entry fills, all settled | 0 | 0 (file absent) | 1 / 4973 | 0 | **New ID format accepted:** 31 `ra-<y|n>-<hex>` orders, 19 filled, 0 HTTPError/400/invalid. Ledger $12.9696 == real $12.9696 (up from $5.2971). Only errors: ws disconnects (06:58-07:00, 10:53) and one balance-fetch failure (10:52), all recovered. Pi checkout fast-forwarded to `2ed2f90` (disk only, `import order_manager` OK). |
 | | | | | | | |

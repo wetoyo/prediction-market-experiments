@@ -33,7 +33,7 @@ its own dollar allocation.
 | resolution_alpha on the Pi | `resolution-alpha.service`, PID **45269**. The owner restarted it at **2026-09-26 14:37:48 EDT** onto `24e28af`. Phase 2 is live: it sizes off its own ledger, allocation fraction 1.0, **not** shared mode. Balance about **$5.30**. |
 | New ID format `ra-<y|n>-<28 hex>` | **Unconfirmed.** No resolution_alpha order had been placed since the restart as of 14:58. The older `ra-<32 hex>` was accepted: 40 orders and 23 fills with 0 HTTP errors, 01:24-14:37. |
 | btc_implied_prob / golf_field_alpha | **Code done, nothing running** anywhere. They're shadow by default. |
-| Git | Everything is on `origin/main` (`1b9145e`). The Pi's checkout is still `24e28af`: it has **not pulled** `1b9145e`. |
+| Git | Everything is on `origin/main`. The Pi's checkout was fast-forwarded to `2ed2f90` on 2026-09-27 (disk only; the running process predates it). |
 | Tests | `python -m pytest shared/tests resolution_alpha/tests` from `expirments/`: 133 pass. `python test_ledger_wiring.py` in `btc_implied_prob/` and in `golf_field_alpha/`: all scenarios pass. |
 
 ### What `1b9145e` did

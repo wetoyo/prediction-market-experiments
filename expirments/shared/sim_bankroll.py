@@ -55,6 +55,17 @@ available != real + offset. That makes the check correct for any allocation
 A divergence must show on two consecutive checks before it's counted and
 resynced: a settlement landing between the balance fetch and the settlement
 fetch is a legitimate one-poll transient, not drift.
+
+Reserve (profit skimming, profit_skim.py, added 2026-09-27): Kalshi has no
+withdrawal endpoint, so "taking profit out" means moving it from this
+ledger's cash into `reserve` -- money that stays in the Kalshi account but
+that this runner no longer sizes off. The check compares (available +
+reserve) against the real balance, so a skim moves no gap. A withdrawal the
+owner then makes on kalshi.com drops the real balance; declared beforehand
+(`declare_withdrawal`), the check matches the drop and takes it out of the
+reserve instead of reading it as divergence. `trading_pnl` sums every cash
+change that came from trading (fills, pair redemptions, settlements) and
+nothing else, for the skim rules to measure profit by.
 """
 
 import logging
@@ -120,6 +131,10 @@ class SimulatedBankroll:
         self.recent_order_ids: dict[str, float] = {}  # order_id -> booked ts
         self.recovered_orders = 0  # fills resume() booked from the account's order history
         self.holds: dict[str, float] = {}  # order_id -> dollars a resting order keeps out of the balance
+        self.reserve = 0.0  # skimmed profit still in the account, off-limits to sizing
+        self.trading_pnl = 0.0  # this process's cash change from trading only
+        self.pending_withdrawals: dict[str, float] = {}  # declared id -> dollars, until the balance drop shows
+        self.matched_withdrawals: list[dict] = []  # applied withdrawals, drained by profit_skim.py
 
         self.checks = 0
         self.inconclusive_checks = 0
@@ -155,7 +170,7 @@ class SimulatedBankroll:
                 )
             self.holds = {i: d for i, d in (holds or {}).items() if d > 0}
             self.cash = self._allocation(real_balance) + sum(self.holds.values())
-            self.offset = self._available() - real_balance
+            self.offset = self._available() + self.reserve - real_balance
             for ticker, (side, contracts) in (open_positions or {}).items():
                 pos = self.positions.setdefault(ticker, _Position())
                 setattr(pos, side, getattr(pos, side) + contracts)
@@ -191,7 +206,8 @@ class SimulatedBankroll:
             # added; older files only have `sim_cash`, which had no holds.
             self.cash = float(state.get("ledger_cash", state["sim_cash"]))
             self.holds = {i: float(d) for i, d in (state.get("holds") or {}).items()}
-            self.offset = self._available() - real_balance
+            self.reserve = float(state.get("reserve", self.reserve))
+            self.offset = self._available() + self.reserve - real_balance
             for ticker, row in (state.get("open_positions") or {}).items():
                 self.positions[ticker] = _Position(
                     yes=float(row.get("yes", 0.0)), no=float(row.get("no", 0.0)),
@@ -217,9 +233,11 @@ class SimulatedBankroll:
         count = _f(order.get("fill_count_fp"))
         if count <= 0:
             return False
-        self.cash -= sum(_f(order.get(k)) for k in (
+        cost = sum(_f(order.get(k)) for k in (
             "taker_fill_cost_dollars", "maker_fill_cost_dollars", "taker_fees_dollars", "maker_fees_dollars",
         ))
+        self.cash -= cost
+        self.trading_pnl -= cost
         ticker = order["ticker"]
         is_new = ticker not in self.positions
         self._add_contracts(ticker, side, count)
@@ -233,7 +251,8 @@ class SimulatedBankroll:
     def _allocation(self, real_balance: float) -> float:
         if self.allocation_dollars is not None:
             return self.allocation_dollars
-        return real_balance * self.allocation_fraction
+        # The reserve is in the real balance but no longer this runner's to trade.
+        return max(0.0, real_balance - self.reserve) * self.allocation_fraction
 
     def _available(self) -> float:
         """Cash not reserved by a resting order. Caller holds the lock."""
@@ -289,6 +308,7 @@ class SimulatedBankroll:
                 # initialize() sizing off a balance fetched before this fill.
                 return 0.0
             self.cash -= cost
+            self.trading_pnl -= cost
             self._add_contracts(ticker, side, count)
             order_id = order_response.get("order_id")
             if order_id:
@@ -315,6 +335,7 @@ class SimulatedBankroll:
         with self._lock:
             self.fill_seq += 1
             self.cash -= cost
+            self.trading_pnl -= cost
             if count:
                 is_new = ticker not in self.positions
                 self._add_contracts(ticker, side, count)
@@ -351,6 +372,7 @@ class SimulatedBankroll:
                 )
             )
             self.cash += pending["cost"] - exact_cost
+            self.trading_pnl += pending["cost"] - exact_cost
             exact_count = _f(order.get("fill_count_fp"), default=pending["count"])
             if exact_count != pending["count"]:
                 self._add_contracts(pending["ticker"], pending["side"], exact_count - pending["count"])
@@ -385,6 +407,7 @@ class SimulatedBankroll:
                 logger.warning("[sim-bankroll] %s settled with result %r and no value -- crediting 0", ticker, result)
                 payout = 0.0
             self.cash += payout
+            self.trading_pnl += payout
             return payout
 
     def _add_contracts(self, ticker: str, side: str, count: float) -> None:
@@ -393,6 +416,7 @@ class SimulatedBankroll:
         pairs = min(pos.yes, pos.no)
         if pairs > 0:  # a matched yes+no pair redeems for $1
             self.cash += pairs
+            self.trading_pnl += pairs
             pos.yes -= pairs
             pos.no -= pairs
         if pos.yes <= 1e-9 and pos.no <= 1e-9:
@@ -410,7 +434,7 @@ class SimulatedBankroll:
             self.checks += 1
             expected = real_balance + self.offset
             available = self._available()
-            gap = available - expected
+            gap = available + self.reserve - expected
             base = dict(sim_cash=available, real_balance=real_balance, expected_cash=expected, gap=gap)
             if self.fill_seq != fill_seq_at_balance:
                 self.inconclusive_checks += 1
@@ -421,6 +445,12 @@ class SimulatedBankroll:
             if abs(gap) <= self.tolerance_dollars:
                 self._suspect_gap = None
                 return CheckResult("ok", **base)
+            matched = self._match_withdrawal(gap)
+            if matched:
+                self._suspect_gap = None
+                for withdrawal_id in matched:
+                    self._apply_withdrawal(withdrawal_id, self.pending_withdrawals.pop(withdrawal_id))
+                return CheckResult("withdrawal", reason=f"declared withdrawal(s) {', '.join(matched)} matched", **base)
             if self._suspect_gap is None:
                 self._suspect_gap = gap
                 return CheckResult("suspect", **base)
@@ -432,8 +462,75 @@ class SimulatedBankroll:
                 "expected_cash": expected, "gap": gap, "open_positions": len(self.positions),
                 "holds": round(sum(self.holds.values()), 6),
             }
-            self.cash = expected + sum(self.holds.values())
+            self.cash = expected - self.reserve + sum(self.holds.values())
             return CheckResult("diverged", **base)
+
+    # -- reserve (profit skimming) -------------------------------------------
+
+    def restore_reserve(self, dollars: float) -> None:
+        """Before the first sync: the reserve a previous process left (from
+        profit_skim.py's state file), so initialize() doesn't hand it back
+        to this runner as trading cash."""
+        with self._lock:
+            self.reserve = max(0.0, dollars)
+
+    def set_aside(self, dollars: float) -> float:
+        """Move up to `dollars` of available cash into the reserve. Returns
+        what was moved (never more than the available cash)."""
+        with self._lock:
+            moved = max(0.0, min(dollars, self._available()))
+            self.cash -= moved
+            self.reserve += moved
+            return moved
+
+    def release(self, dollars: float) -> float:
+        """Move up to `dollars` of the reserve back into trading cash."""
+        with self._lock:
+            moved = max(0.0, min(dollars, self.reserve))
+            self.reserve -= moved
+            self.cash += moved
+            return moved
+
+    def declare_withdrawal(self, withdrawal_id: str, dollars: float) -> None:
+        """The owner is about to withdraw `dollars` on kalshi.com. check()
+        applies it when the real balance drops by that much."""
+        with self._lock:
+            if dollars > 0:
+                self.pending_withdrawals[withdrawal_id] = dollars
+
+    def apply_withdrawal_now(self, withdrawal_id: str, dollars: float) -> None:
+        """Apply a withdrawal without waiting for check() to see it (shared-
+        account mode, where this ledger runs no check of its own)."""
+        with self._lock:
+            self.pending_withdrawals.pop(withdrawal_id, None)
+            self._apply_withdrawal(withdrawal_id, dollars)
+
+    def take_matched_withdrawals(self) -> list[dict]:
+        with self._lock:
+            matched, self.matched_withdrawals = self.matched_withdrawals, []
+            return matched
+
+    def _match_withdrawal(self, gap: float) -> list[str]:
+        """Declared withdrawals the gap is explained by: one of them, or all
+        of them together. Caller holds the lock."""
+        if gap <= self.tolerance_dollars or not self.pending_withdrawals:
+            return []
+        for withdrawal_id, dollars in self.pending_withdrawals.items():
+            if abs(gap - dollars) <= self.tolerance_dollars:
+                return [withdrawal_id]
+        if abs(gap - sum(self.pending_withdrawals.values())) <= self.tolerance_dollars:
+            return list(self.pending_withdrawals)
+        return []
+
+    def _apply_withdrawal(self, withdrawal_id: str, dollars: float) -> None:
+        """Out of the reserve first; anything beyond it was trading cash.
+        Caller holds the lock."""
+        from_reserve = min(dollars, self.reserve)
+        self.reserve -= from_reserve
+        self.cash -= dollars - from_reserve
+        self.matched_withdrawals.append(
+            {"id": withdrawal_id, "dollars": dollars, "from_reserve": from_reserve, "ts": time.time()}
+        )
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -448,6 +545,10 @@ class SimulatedBankroll:
                 # sums against the real balance); ledger_cash includes holds.
                 "sim_cash": round(self._available(), 6),
                 "ledger_cash": round(self.cash, 6),
+                # account_reconciler.py sums sim_cash + reserve against the real balance.
+                "reserve": round(self.reserve, 6),
+                "trading_pnl": round(self.trading_pnl, 6),
+                "pending_withdrawals": dict(self.pending_withdrawals),
                 "holds": dict(self.holds),
                 "offset": round(self.offset, 6),
                 "fill_seq": self.fill_seq,

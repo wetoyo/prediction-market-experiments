@@ -68,6 +68,7 @@ from kalshi_gateway import KalshiTradingClient
 _SHARED_DIR = str(Path(__file__).resolve().parents[1] / "shared")
 if _SHARED_DIR not in sys.path:
     sys.path.append(_SHARED_DIR)
+from profit_skim import ProfitSkimmer  # noqa: E402
 from sim_bankroll import CheckResult, SimulatedBankroll  # noqa: E402
 
 logger = logging.getLogger("resolution_alpha.order_manager")
@@ -126,6 +127,7 @@ class OrderManager:
     # Class-level fallbacks so an instance built via OrderManager.__new__
     # (tests/test_order_manager.py's TestPlaceOrderWiring) has no ledger.
     _sim: SimulatedBankroll | None = None
+    _skimmer: ProfitSkimmer | None = None
     _size_from_sim = False
     _shared_account = False
     order_tag = config.ORDER_TAG
@@ -170,6 +172,18 @@ class OrderManager:
                 )
                 self._size_from_sim = size_from_sim
                 self._shared_account = shared_account
+                if config.PROFIT_SKIM_ENABLED:
+                    self._skimmer = ProfitSkimmer(
+                        config.PROFIT_SKIM_RULES_PATH, config.PROFIT_SKIM_STATE_PATH, config.PROFIT_SKIM_LOG_PATH,
+                        config.PROFIT_SKIM_INBOX_PATH, apply_withdrawals_immediately=shared_account,
+                        log=_log_despite_lightweight_mode,
+                    )
+                    # The reserve a previous process set aside stays out of this
+                    # one's allocation (a shared-mode resume reads it from the
+                    # status file instead, consistent with the cash there).
+                    self._sim.restore_reserve(self._skimmer.saved_reserve)
+                    if not size_from_sim:
+                        logger.warning("[profit-skim] SIZE_FROM_SIM_BANKROLL is off -- skims won't change sizing")
             elif size_from_sim:
                 logger.warning(
                     "SIZE_FROM_SIM_BANKROLL is on but SIM_BANKROLL_ENABLED is off -- sizing off the real balance"
@@ -271,6 +285,10 @@ class OrderManager:
                 sim.divergence_count, result.sim_cash, result.expected_cash, result.real_balance, result.gap,
             )
             self._append_divergence(sim.last_divergence)
+        elif result.status == "withdrawal":
+            _log_despite_lightweight_mode(
+                logging.WARNING, "[sim-bankroll] real balance dropped $%.4f: %s", result.gap, result.reason,
+            )
         elif result.status == "suspect":
             logger.info(
                 "[sim-bankroll] gap %+.4f (sim $%.4f vs expected $%.4f) -- confirming on the next check",
@@ -283,7 +301,16 @@ class OrderManager:
                 "[sim-bankroll] %s: sim $%.4f, real $%.4f, %d checks (%d inconclusive), %d divergence(s) this run",
                 result.status, sim.cash, real_balance, sim.checks, sim.inconclusive_checks, sim.divergence_count,
             )
+        self._step_skimmer()
         self._write_sim_status(result)
+
+    def _step_skimmer(self) -> None:
+        if self._skimmer is None:
+            return
+        try:
+            self._skimmer.step(self._sim)
+        except Exception:
+            logger.exception("[profit-skim] step failed (the ledger and orders are unaffected; retrying next sync)")
 
     def _initialize_sim(self, real_balance: float, fill_seq_at_balance: int) -> None:
         sim = self._sim

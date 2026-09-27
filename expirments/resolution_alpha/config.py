@@ -574,6 +574,17 @@ SIM_BANKROLL_SHARED_ACCOUNT = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_AC
 # for one restart to accept starting over, then unset it.
 SIM_BANKROLL_ALLOW_FRESH_ALLOCATION = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOW_FRESH_ALLOCATION", False)
 SIM_BANKROLL_FRESH_ALLOCATION_LOOKBACK_SECONDS = 7 * 24 * 3600
+# Profit skimming (added 2026-09-27, ../shared/profit_skim.py): owner rules in
+# PROFIT_SKIM_RULES_PATH move a share of the runner's profit out of its
+# ledger into a reserve that stays in the Kalshi account but is no longer
+# sized off (Kalshi has no withdrawal endpoint). The rules file is reloaded
+# whenever it changes; no file = no rules. Needs SIM_BANKROLL_ENABLED, and
+# only changes sizing with SIZE_FROM_SIM_BANKROLL on. Manage it with
+# skim_ctl.py (status / withdraw / release).
+PROFIT_SKIM_ENABLED = _bool_env("RESOLUTION_ALPHA_PROFIT_SKIM_ENABLED", True)
+PROFIT_SKIM_RULES_PATH = _str_env(
+    "RESOLUTION_ALPHA_PROFIT_SKIM_RULES_PATH", os.path.join(os.path.dirname(__file__), "live", "profit_skim_rules.json")
+)
 
 # How often to re-evaluate active markets and poll spot prices, in seconds.
 POLL_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_POLL_INTERVAL_SECONDS", 2.0)
@@ -692,6 +703,11 @@ SAMPLING_DB_PATH = os.environ.get("RESOLUTION_ALPHA_SAMPLING_DB_PATH", os.path.j
 # Simulated-bankroll shadow ledger outputs (see SIM_BANKROLL_ENABLED above).
 SIM_BANKROLL_STATUS_PATH = os.path.join(LOG_DIR, "sim_bankroll.json")
 SIM_BANKROLL_DIVERGENCE_LOG_PATH = os.path.join(LOG_DIR, "sim_bankroll_divergences.jsonl")
+# Profit-skim state (the reserve, each rule's accrued profit), its event log,
+# and the owner's inbox (withdrawal declarations / releases from skim_ctl.py).
+PROFIT_SKIM_STATE_PATH = os.path.join(LOG_DIR, "profit_skim.json")
+PROFIT_SKIM_LOG_PATH = os.path.join(LOG_DIR, "profit_skims.jsonl")
+PROFIT_SKIM_INBOX_PATH = os.path.join(LOG_DIR, "profit_skim_inbox.jsonl")
 
 # Kalshi underlying symbol (from series `tags`) -> Coinbase spot product id.
 # This is a free public proxy for Kalshi's actual settlement source (CF

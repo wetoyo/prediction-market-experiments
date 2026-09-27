@@ -12,7 +12,9 @@ does the check for the whole account instead:
 
 It is the same change-based check as SimulatedBankroll.check, summed:
 `offset` = sum(ledger cash) - real balance at the baseline, and the account
-has diverged when sum(cash) != real + offset. That holds for any mix of
+has diverged when sum(cash) != real + offset. A ledger's cash here includes
+its profit-skim `reserve` (money it set aside but that is still in the
+account; ../shared/profit_skim.py), so a skim moves no gap. That holds for any mix of
 allocations, with any unallocated reserve left in the account.
 
 Separate process, read-only: it only reads the status files and issues GET
@@ -79,6 +81,11 @@ def _ledger_name(status: dict, path: str) -> str:
     return status.get("order_tag") or path
 
 
+def _ledger_cash(status: dict) -> float:
+    """A ledger's share of the real balance: available cash + its reserve."""
+    return float(status["sim_cash"]) + float(status.get("reserve") or 0.0)
+
+
 def overlapping_tickers(statuses: dict[str, dict]) -> dict[str, list[str]]:
     """Tickers held by more than one ledger. Kalshi nets positions per
     account, so two runners on one ticker is the cross-model netting hazard
@@ -134,7 +141,7 @@ class AccountReconciler:
             return ReconcileResult("inconclusive", reason="; ".join(problems), **base)
 
         base["overlapping_tickers"] = overlapping_tickers(statuses)
-        ledger_cash = sum(float(statuses[n]["sim_cash"]) for n in names)
+        ledger_cash = sum(_ledger_cash(statuses[n]) for n in names)
         base["ledger_cash"] = ledger_cash
         key = tuple((n, statuses[n].get("allocation_epoch")) for n in names)
         if key != self.baseline_key:
@@ -162,7 +169,7 @@ class AccountReconciler:
         self.last_divergence = {
             "ts": now, "ledger_cash": ledger_cash, "real_balance": real_balance, "expected_cash": expected,
             "gap": gap, "since_last_ok_ts": self.last_ok_ts,
-            "ledgers": {n: float(statuses[n]["sim_cash"]) for n in names},
+            "ledgers": {n: _ledger_cash(statuses[n]) for n in names},
         }
         self._rebaseline(key, ledger_cash, real_balance, now)
         return ReconcileResult("diverged", **base)

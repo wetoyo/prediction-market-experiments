@@ -1,0 +1,14 @@
+{
+ "rules": [
+  {
+   "name": "daily-10pct",
+   "note": "Each day just after midnight ET, set aside 10% of the day's trading profit. A losing day takes nothing and isn't carried over.",
+   "at": "00:05",
+   "timezone": "America/New_York",
+   "fraction": 0.10,
+   "basis": "period",
+   "min_dollars": 0.01,
+   "max_wait_minutes": 180
+  }
+ ]
+}
