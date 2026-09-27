@@ -13,9 +13,8 @@ this file covers *where things stand and what to do next*.
   ledger is healthy: $12.9696 == real, 0 divergences. The Pi's checkout is on `2ed2f90`, so
   resolution_alpha can restart safely.
 - **New feature: profit skimming** (`../../shared/profit_skim.py`, see "Profit skimming" below). The
-  owner's rule is 10% of each day's profit, run at 00:05 ET, and nothing on a losing day. It's
-  committed and deployed to the Pi's disk. **It runs only after a restart**, which needs the owner's OK.
-  After that restart:
+  owner's rule is 10% of each day's profit, run at 00:05 ET, and nothing on a losing day. **Live since the 2026-09-27 13:26 restart** (PID 50160,
+  `055bc03`, which also brought the allocation guard). To check it:
   - Look for `[profit-skim] loaded 1 rule(s)` in the journal.
   - The next day, look for a `[profit-skim] daily-10pct:` line just after 00:05.
   - Run `../../.venv/bin/python skim_ctl.py status`.
@@ -412,4 +411,5 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 | 2026-09-26 14:35 EDT | 13h 11m since the Phase 2 restart (PID 41866) / 23 entry fills, all settled (no open positions) | 0 | 0 (file absent) | 0 / 2950 | 0 | **Tag accepted:** 40 `LIVE ORDER`s (all `ra-<hex>`, per `inspect_order_records.py`), 23 `entry filled`, the rest IOC 0-fills ("no marketable depth"), **0 HTTPError**. Ledger $5.2971 == real $5.2971 (up from $3.3313), gap ~1e-15, `fill_seq` 23. Phase 2 sizing is working: 1-4 contracts per order, `no_bankroll=0` in all 132 eval summaries. Only ERRORs: 2 ws keepalive-ping disconnects (03:11, 13:58), both auto-reconnected. |
 | 2026-09-26 14:38 EDT | Restart onto `24e28af` (incl. `2fb9c95`) at 14:37:48, PID 45269 | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $5.2971 of real $5.2971, adopted 0 of 0`. New ID format `ra-<y|n>-<28 hex>` not yet exercised (no order by 14:58). |
 | 2026-09-27 12:52 EDT | 22h 14m (PID 45269) / 19 entry fills, all settled | 0 | 0 (file absent) | 1 / 4973 | 0 | **New ID format accepted:** 31 `ra-<y|n>-<hex>` orders, 19 filled, 0 HTTPError/400/invalid. Ledger $12.9696 == real $12.9696 (up from $5.2971). Only errors: ws disconnects (06:58-07:00, 10:53) and one balance-fetch failure (10:52), all recovered. Pi checkout fast-forwarded to `2ed2f90` (disk only, `import order_manager` OK). |
+| 2026-09-27 13:27 EDT | Restart onto `055bc03` at 13:26:15 (owner OK), PID 50160, flat | 0 | 0 | 0 / few | 0 | `initialized (SIZING off it): sim $12.9696 of real $12.9696`; `[profit-skim] loaded 1 rule(s): daily-10pct` (accrues from 13:26:34; first run 09-28 00:05 EDT); allocation guard registered `ra` as single-runner, claims $12.9696 = balance, OK. Killswitch skipped as before (`DISABLE_KILLSWITCH` in `.env`). |
 | | | | | | | |
