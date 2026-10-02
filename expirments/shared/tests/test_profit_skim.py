@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from profit_skim import ProfitSkimmer, RuleError, cli, latest_slot, parse_rules
+from profit_skim import ProfitSkimmer, RuleError, cli, latest_slot, next_slot, parse_rules
 from sim_bankroll import SimulatedBankroll
 
 NY = ZoneInfo("America/New_York")
@@ -77,7 +77,7 @@ class TestRules:
     @pytest.mark.parametrize("bad", [
         {"at": "24:05"}, {"at": "5"}, {"fraction": 0}, {"fraction": 1.5}, {"basis": "weekly"},
         {"timezone": "Mars/Base"}, {"days": ["monday"]}, {"days": []}, {"max_dollars": 0}, {"typo_field": 1},
-        {"name": ""},
+        {"name": ""}, {"at": []}, {"at": ["06:05", "25:00"]}, {"at": 6},
     ])
     def test_invalid_rules_are_rejected(self, bad):
         with pytest.raises(RuleError):
@@ -96,6 +96,19 @@ class TestRules:
         (rule,) = parse_rules({"rules": [{**DAILY, "days": ["mon"]}]})
         # 2026-09-27 is a Sunday; the last Monday was the 21st.
         assert latest_slot(rule, ts(27, 12)) == datetime(2026, 9, 21, 0, 5, tzinfo=NY)
+
+    def test_several_times_a_day(self):
+        (rule,) = parse_rules({"rules": [{**DAILY, "at": ["18:05", "00:05", "12:05", "06:05"]}]})
+        assert latest_slot(rule, ts(27, 0, 4)) == datetime(2026, 9, 26, 18, 5, tzinfo=NY)
+        assert latest_slot(rule, ts(27, 6, 5)) == datetime(2026, 9, 27, 6, 5, tzinfo=NY)
+        assert latest_slot(rule, ts(27, 17)) == datetime(2026, 9, 27, 12, 5, tzinfo=NY)
+        assert next_slot(rule, ts(27, 17)) == datetime(2026, 9, 27, 18, 5, tzinfo=NY)
+        assert next_slot(rule, ts(27, 19)) == datetime(2026, 9, 28, 0, 5, tzinfo=NY)
+
+    def test_several_times_with_days_filter(self):
+        (rule,) = parse_rules({"rules": [{**DAILY, "at": ["00:05", "12:05"], "days": ["mon"]}]})
+        assert latest_slot(rule, ts(27, 12)) == datetime(2026, 9, 21, 12, 5, tzinfo=NY)
+        assert next_slot(rule, ts(27, 12)) == datetime(2026, 9, 28, 0, 5, tzinfo=NY)
 
 
 class TestSkim:
@@ -116,6 +129,21 @@ class TestSkim:
         # runs once per slot
         skimmer.step(sim, now=ts(27, 0, 6))
         assert sim.reserve == pytest.approx(0.03) and len(_events(files)) == 1
+
+    def test_every_six_hours_skims_each_period_separately(self, files):
+        with open(files["rules_path"], "w") as fh:
+            json.dump({"rules": [{**DAILY, "at": ["00:05", "06:05", "12:05", "18:05"]}]}, fh)
+        account, skimmer, sim = _setup(files, start=ts(26, 12, 10))
+        _trade(sim, account, 0.80, 1.0)  # +0.20
+        skimmer.step(sim, now=ts(26, 18, 5))
+        assert sim.reserve == pytest.approx(0.02)
+        _trade(sim, account, 0.95, 0.0)  # -0.95: this period takes nothing
+        skimmer.step(sim, now=ts(27, 0, 5))
+        assert sim.reserve == pytest.approx(0.02)
+        _trade(sim, account, 0.50, 1.0)  # +0.50, not netted against the last period
+        skimmer.step(sim, now=ts(27, 6, 5))
+        assert sim.reserve == pytest.approx(0.07)
+        assert [e["event"] for e in _events(files)] == ["skim", "skip", "skim"]
 
     def test_losing_day_takes_nothing_and_is_forgotten(self, files):
         account, skimmer, sim = _setup(files)

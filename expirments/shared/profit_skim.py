@@ -13,7 +13,9 @@ force, so a typo never silently drops a rule:
 
     {"rules": [
       {"name": "daily-10pct",       # unique; its state is keyed by it
-       "at": "00:05",               # local time the rule runs
+       "at": "00:05",               # local time the rule runs; or a list,
+                                    # e.g. ["00:05", "12:05"], to run several
+                                    # times a day (each run is its own period)
        "timezone": "America/New_York",
        "days": ["mon", "tue"],      # optional; default every day
        "fraction": 0.10,            # share of the period's profit to take
@@ -100,11 +102,16 @@ def parse_rules(doc: dict) -> list[dict]:
         }
         if unknown:
             raise RuleError(f"{where}: unknown field(s) {sorted(unknown)}")
+        raw_at = raw.get("at", "")
         try:
-            hour, minute = (int(x) for x in str(raw.get("at", "")).split(":"))
-            at = dtime(hour, minute)
+            if isinstance(raw_at, list):
+                if not raw_at:
+                    raise ValueError
+                at = tuple(sorted({_parse_hhmm(a) for a in raw_at}))
+            else:
+                at = (_parse_hhmm(raw_at),)
         except (TypeError, ValueError):
-            raise RuleError(f"{where}: 'at' must be \"HH:MM\"") from None
+            raise RuleError(f"{where}: 'at' must be \"HH:MM\" or a non-empty list of them") from None
         try:
             tz = ZoneInfo(raw.get("timezone", "America/New_York"))
         except Exception:
@@ -136,14 +143,22 @@ def parse_rules(doc: dict) -> list[dict]:
     return rules
 
 
+def _parse_hhmm(value) -> dtime:
+    hour, minute = (int(x) for x in str(value).split(":"))
+    return dtime(hour, minute)
+
+
 def latest_slot(rule: dict, now: float) -> datetime:
     """The most recent scheduled time of `rule` at or before `now`."""
     local = datetime.fromtimestamp(now, rule["tz"])
     for back in range(8):
         day = local.date() - timedelta(days=back)
-        candidate = datetime.combine(day, rule["at"], tzinfo=rule["tz"])
-        if candidate <= local and (rule["days"] is None or day.weekday() in rule["days"]):
-            return candidate
+        if rule["days"] is not None and day.weekday() not in rule["days"]:
+            continue
+        for at in reversed(rule["at"]):
+            candidate = datetime.combine(day, at, tzinfo=rule["tz"])
+            if candidate <= local:
+                return candidate
     raise AssertionError("unreachable: some day in the last week matches")
 
 
@@ -151,9 +166,12 @@ def next_slot(rule: dict, now: float) -> datetime:
     local = datetime.fromtimestamp(now, rule["tz"])
     for ahead in range(8):
         day = local.date() + timedelta(days=ahead)
-        candidate = datetime.combine(day, rule["at"], tzinfo=rule["tz"])
-        if candidate > local and (rule["days"] is None or day.weekday() in rule["days"]):
-            return candidate
+        if rule["days"] is not None and day.weekday() not in rule["days"]:
+            continue
+        for at in rule["at"]:
+            candidate = datetime.combine(day, at, tzinfo=rule["tz"])
+            if candidate > local:
+                return candidate
     raise AssertionError("unreachable: some day in the next week matches")
 
 
@@ -490,7 +508,7 @@ def cli(argv: list[str] | None, *, rules_path: str, state_path: str, log_path: s
     for rule in rules:
         rs = (state.get("rules") or {}).get(rule["name"], {})
         line = (f"  {rule['name']}: {rule['fraction']:.0%} of {rule['basis']} profit at "
-                f"{rule['at'].strftime('%H:%M')} {rule['tz'].key}"
+                f"{','.join(a.strftime('%H:%M') for a in rule['at'])} {rule['tz'].key}"
                 f"{'' if rule['days'] is None else ' on ' + ','.join(DAYS[d] for d in rule['days'])}"
                 f"{'' if rule['enabled'] else ' (DISABLED)'}; next {next_slot(rule, now).strftime('%Y-%m-%d %H:%M %Z')}")
         if rs:

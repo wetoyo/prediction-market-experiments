@@ -1,9 +1,9 @@
 {
  "rules": [
   {
-   "name": "daily-10pct",
-   "note": "Each day just after midnight ET, set aside 10% of the day's trading profit. A losing day takes nothing and isn't carried over.",
-   "at": "00:05",
+   "name": "6h-10pct",
+   "note": "Every 6 hours (00:05, 06:05, 12:05, 18:05 ET), set aside 10% of that period's trading profit. A losing period takes nothing and isn't carried over. Was daily-10pct (once a day at 00:05) until 2026-10-01.",
+   "at": ["00:05", "06:05", "12:05", "18:05"],
    "timezone": "America/New_York",
    "fraction": 0.10,
    "basis": "period",

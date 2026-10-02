@@ -208,7 +208,10 @@ format and every field are in the module docstring of `../../shared/profit_skim.
 - An invalid file is rejected whole, and the previous rules stay in force.
 - After editing, run `skim_ctl.py check-rules`.
 
-The current rule is `daily-10pct`: 00:05 America/New_York, fraction 0.10, basis `period`.
+The current rule is `6h-10pct`: 00:05, 06:05, 12:05 and 18:05 America/New_York, fraction 0.10, basis
+`period`. Each 6h run is its own period. It replaced `daily-10pct` (00:05 only) on 2026-10-01. A list
+`"at"` needs the code from that change, so a process started before it rejects the file and keeps
+`daily-10pct` until it is restarted.
 
 How the rules work:
 - **Profit** is the ledger's `trading_pnl`: fills, pair redemptions and settlements only. Skims,
