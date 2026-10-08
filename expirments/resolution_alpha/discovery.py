@@ -55,6 +55,17 @@ def _parse_time(value: str) -> datetime:
 
 
 def _extract_underlying(series: dict) -> str | None:
+    # Primary source: the series ticker (KXBTCD, KXETH15M, KXTONH, ...).
+    # Kalshi rewrote series tags on 2026-10-07 06:30Z ("BTC" -> "Bitcoin",
+    # "ETH" -> "Ethereum", some series lost tags entirely), which silently
+    # dropped discovery to 0 markets. Longest symbol first so a longer symbol
+    # never loses to a shorter one sharing its prefix.
+    ticker = (series.get("ticker") or "").upper()
+    if ticker.startswith("KX"):
+        rest = ticker[2:]
+        for symbol in sorted(KALSHI_UNDERLYING_TO_COINBASE_PRODUCT, key=len, reverse=True):
+            if rest.startswith(symbol):
+                return symbol
     for tag in series.get("tags") or []:
         symbol = tag.upper()
         if symbol in KALSHI_UNDERLYING_TO_COINBASE_PRODUCT:
