@@ -573,6 +573,13 @@ SIM_BANKROLL_SHARED_ACCOUNT = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_SHARED_AC
 # trades) rather than silently restart at a full allocation. Set this to true
 # for one restart to accept starting over, then unset it.
 SIM_BANKROLL_ALLOW_FRESH_ALLOCATION = _bool_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOW_FRESH_ALLOCATION", False)
+# Single-runner mode with a fixed ALLOCATION_DOLLARS: a plain restart resumes
+# the ledger (its cash is its P&L, not the allocation again). A fresh
+# allocation happens only when ALLOCATION_DOLLARS or this ID differs from the
+# ones the last status file was written under -- kalshi_ctl.py's
+# /kalshi/ra/allocate/N stamps a new ID, so re-allocating the same amount
+# still starts over.
+SIM_BANKROLL_ALLOCATION_ID = _str_env("RESOLUTION_ALPHA_SIM_BANKROLL_ALLOCATION_ID", "")
 SIM_BANKROLL_FRESH_ALLOCATION_LOOKBACK_SECONDS = 7 * 24 * 3600
 # Profit skimming (added 2026-09-27, ../shared/profit_skim.py): owner rules in
 # PROFIT_SKIM_RULES_PATH move a share of the runner's profit out of its

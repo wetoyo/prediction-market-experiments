@@ -184,18 +184,25 @@ class SimulatedBankroll:
         real_balance: float,
         fill_seq_at_balance: int,
         recovered_orders: list[tuple[dict, str]] = (),
+        keep_offset: bool = False,
     ) -> float | None:
-        """Shared-account restart: carry on from this ledger's own last
-        snapshot() (cash, positions, pending exact costs, allocation epoch)
-        instead of re-allocating off the real balance and adopting every
-        position on the account -- other runners' positions included.
-        Settlements that landed while the process was down are picked up by
-        the next sync (positions keep their opened_ts).
+        """Restart: carry on from this ledger's own last snapshot() (cash,
+        positions, pending exact costs, allocation epoch) instead of
+        re-allocating off the real balance and adopting every position on
+        the account -- other runners' positions included. Settlements that
+        landed while the process was down are picked up by the next sync
+        (positions keep their opened_ts).
 
         `recovered_orders`: (GET order record, outcome side) for this
         runner's own filled orders since the snapshot was written. A fill
         booked in memory but not yet written out when the process died is
         in there; orders the snapshot already knows are skipped.
+
+        `keep_offset` (single-runner mode, where check() runs): keep the
+        snapshot's offset rather than re-deriving it from `real_balance`. A
+        settlement that paid out while the process was down is already in
+        `real_balance` but not yet in the cash; re-deriving would bake that
+        payout into the offset, and the next check would resync it away.
 
         Returns the available cash, or None (retry next sync) if a fill
         landed after `real_balance` was fetched."""
@@ -207,7 +214,10 @@ class SimulatedBankroll:
             self.cash = float(state.get("ledger_cash", state["sim_cash"]))
             self.holds = {i: float(d) for i, d in (state.get("holds") or {}).items()}
             self.reserve = float(state.get("reserve", self.reserve))
-            self.offset = self._available() + self.reserve - real_balance
+            if keep_offset and state.get("offset") is not None:
+                self.offset = float(state["offset"])
+            else:
+                self.offset = self._available() + self.reserve - real_balance
             for ticker, row in (state.get("open_positions") or {}).items():
                 self.positions[ticker] = _Position(
                     yes=float(row.get("yes", 0.0)), no=float(row.get("no", 0.0)),

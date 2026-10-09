@@ -234,6 +234,81 @@ class TestSharedAccountMode:
         assert a._sim.divergence_count == 1  # still self-checks
 
 
+class TestSingleRunnerRestart:
+    """A plain restart with a fixed allocation resumes the ledger. The
+    2026-10-07 incident: ra was down to $8.45 of a $10 allocation, a code-fix
+    restart re-allocated $10, and the $1.55 came out of unallocated money."""
+
+    def _losing_runner(self, account, path, monkeypatch):
+        a = _runner(account, "ra", path, monkeypatch, allocation_dollars=8.0, shared=False)
+        _poll(a, monkeypatch)
+        a.buy_favored_side(T1, "no", 2, 0.72)
+        _poll(a, monkeypatch)
+        account.settle(T1, "yes", 0.0)  # lost
+        _poll(a, monkeypatch)
+        assert a._sim.cash == pytest.approx(8.0 - 1.4683)
+        return a
+
+    def test_restart_does_not_top_the_ledger_back_up(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        a = self._losing_runner(account, tmp_path / "a.json", monkeypatch)
+        restarted = _runner(account, "ra", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0, shared=False)
+        _poll(restarted, monkeypatch)
+        _poll(restarted, monkeypatch)
+        assert restarted._sim.resumed_from == a._sim.instance_id
+        assert restarted._sim.cash == pytest.approx(8.0 - 1.4683)
+        assert restarted.get_balance_dollars() == pytest.approx(8.0 - 1.4683)
+        assert restarted._sim.divergence_count == 0
+
+    def test_settlement_while_down_is_credited_not_resynced_away(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        a = _runner(account, "ra", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0, shared=False)
+        _poll(a, monkeypatch)
+        a.buy_favored_side(T1, "no", 2, 0.72)
+        _poll(a, monkeypatch)
+        account.settle(T1, "no", 2.0)  # pays out while the runner is down
+        restarted = _runner(account, "ra", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0, shared=False)
+        for _ in range(4):
+            _poll(restarted, monkeypatch)
+        assert restarted._sim.cash == pytest.approx(8.0 - 1.4683 + 2.0)
+        assert restarted._sim.divergence_count == 0
+
+    def test_new_allocation_amount_starts_fresh(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        self._losing_runner(account, tmp_path / "a.json", monkeypatch)
+        restarted = _runner(account, "ra", tmp_path / "a.json", monkeypatch, allocation_dollars=5.0, shared=False)
+        _poll(restarted, monkeypatch)
+        assert restarted._sim.resumed_from is None and restarted._sim.cash == pytest.approx(5.0)
+
+    def test_new_allocation_id_starts_fresh_at_the_same_amount(self, tmp_path, monkeypatch):
+        account = _Account(20.0)
+        self._losing_runner(account, tmp_path / "a.json", monkeypatch)
+        monkeypatch.setattr(config, "SIM_BANKROLL_ALLOCATION_ID", "1791580153")  # /kalshi/ra/allocate/8 again
+        restarted = _runner(account, "ra", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0, shared=False)
+        _poll(restarted, monkeypatch)
+        assert restarted._sim.resumed_from is None and restarted._sim.cash == pytest.approx(8.0)
+
+    def test_status_without_an_allocation_id_resumes(self, tmp_path, monkeypatch):
+        # status files written before allocation_id existed (the Pi's, at deploy)
+        account = _Account(20.0)
+        self._losing_runner(account, tmp_path / "a.json", monkeypatch)
+        state = json.loads((tmp_path / "a.json").read_text())
+        del state["allocation_id"]
+        (tmp_path / "a.json").write_text(json.dumps(state))
+        restarted = _runner(account, "ra", tmp_path / "a.json", monkeypatch, allocation_dollars=8.0, shared=False)
+        _poll(restarted, monkeypatch)
+        assert restarted._sim.resumed_from is not None
+
+    def test_fraction_allocation_still_starts_fresh(self, tmp_path, monkeypatch):
+        account = _Account(10.0)
+        a = _runner(account, "ra", tmp_path / "a.json", monkeypatch, shared=False)
+        _poll(a, monkeypatch)
+        account.balance += 3.0  # e.g. a deposit while down: the whole account is its own
+        restarted = _runner(account, "ra", tmp_path / "a.json", monkeypatch, shared=False)
+        _poll(restarted, monkeypatch)
+        assert restarted._sim.resumed_from is None and restarted._sim.cash == pytest.approx(13.0)
+
+
 class TestAccountReconcilerWithRealLedgers:
     def test_two_runners_trading_and_settling_stay_ok(self, tmp_path, monkeypatch):
         account = _Account(20.0)  # $9 of it unallocated reserve

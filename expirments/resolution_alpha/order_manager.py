@@ -336,7 +336,15 @@ class OrderManager:
     def _initialize_sim(self, real_balance: float, fill_seq_at_balance: int) -> None:
         sim = self._sim
         mode = "SIZING off it" if self._size_from_sim else "shadow only"
-        if self._shared_account:
+        previous = None
+        if not self._shared_account:
+            previous, why_not = self._read_previous_status()
+            fresh_reason = self._single_runner_fresh_reason(previous, why_not)
+            if fresh_reason:
+                if previous is not None:
+                    logger.warning("[sim-bankroll] fresh allocation, not resuming the last ledger: %s", fresh_reason)
+                previous = None
+        else:
             previous, why_not = self._read_previous_status()
             if previous is not None and not previous.get("shared_account"):
                 # Switching into shared mode: the single-runner ledger claimed
@@ -360,31 +368,34 @@ class OrderManager:
                 previous = None
             elif previous is None and not self._fresh_allocation_allowed(why_not):
                 return  # stays uninitialized: get_balance_dollars sizes 0
-            if previous is not None:
-                # Fills booked in memory after the last status write died
-                # with the old process; the account's order history has them.
-                since = float(previous.get("updated_ts") or 0.0) - 120
-                recovered = self._own_filled_orders(since)
-                cash = sim.resume(previous, real_balance, fill_seq_at_balance, recovered or [])
-                if cash is None:
-                    return  # a fill raced the balance snapshot; retry on the next refresh
-                _log_despite_lightweight_mode(
-                    logging.WARNING if sim.recovered_orders else logging.INFO,
-                    "[sim-bankroll] resumed (%s, shared account, tag %r) from instance %s: sim $%.4f, "
-                    "%d open position(s), %d fill(s) recovered from the order history, real account $%.4f",
-                    mode, self.order_tag, sim.resumed_from, cash, len(sim.positions), sim.recovered_orders,
-                    real_balance,
-                )
-                if self._guard is not None:
-                    # Its money is already its own: warn, don't refuse (that
-                    # would strand its open positions).
-                    ok, breakdown = self._guard.check(cash + sim.reserve, real_balance)
-                    if not ok:
-                        _log_despite_lightweight_mode(
-                            logging.ERROR, "[allocation-guard] account OVER-COMMITTED after resume: %s", breakdown,
-                        )
-                self._write_sim_status(None)
-                return
+        if previous is not None:
+            # Fills booked in memory after the last status write died
+            # with the old process; the account's order history has them.
+            since = float(previous.get("updated_ts") or 0.0) - 120
+            recovered = self._own_filled_orders(since)
+            cash = sim.resume(
+                previous, real_balance, fill_seq_at_balance, recovered or [],
+                keep_offset=not self._shared_account,
+            )
+            if cash is None:
+                return  # a fill raced the balance snapshot; retry on the next refresh
+            _log_despite_lightweight_mode(
+                logging.WARNING if sim.recovered_orders else logging.INFO,
+                "[sim-bankroll] resumed (%s%s, tag %r) from instance %s: sim $%.4f, "
+                "%d open position(s), %d fill(s) recovered from the order history, real account $%.4f",
+                mode, ", shared account" if self._shared_account else "", self.order_tag, sim.resumed_from,
+                cash, len(sim.positions), sim.recovered_orders, real_balance,
+            )
+            if self._guard is not None:
+                # Its money is already its own: warn, don't refuse (that
+                # would strand its open positions).
+                ok, breakdown = self._guard.check(cash + sim.reserve, real_balance)
+                if not ok:
+                    _log_despite_lightweight_mode(
+                        logging.ERROR, "[allocation-guard] account OVER-COMMITTED after resume: %s", breakdown,
+                    )
+            self._write_sim_status(None)
+            return
         if self._guard is not None:
             ok, breakdown = self._guard.check(sim.fresh_claim(real_balance), real_balance)
             if not ok:
@@ -448,6 +459,29 @@ class OrderManager:
         if not state.get("initialized") or "sim_cash" not in state:
             return None, "holds no initialized ledger"
         return state, ""
+
+    def _single_runner_fresh_reason(self, previous: dict | None, why_not: str) -> str:
+        """Single-runner mode: why this start takes a fresh allocation
+        instead of resuming `previous`, or "" to resume. With a fixed dollar
+        allocation, a plain restart must resume -- re-allocating would top a
+        losing ledger back up (or cut a winning one down) with account money
+        that isn't its own. Only a new allocation (different dollars or
+        ALLOCATION_ID, i.e. /kalshi/ra/allocate) starts over."""
+        if previous is None:
+            return f"status file {why_not}"
+        if previous.get("shared_account"):
+            return "switching out of shared-account mode (that ledger's offset counted other runners' money)"
+        if self._sim.allocation_dollars is None:
+            return "no fixed allocation (a fraction of the whole account is re-taken every start)"
+        if config.SIM_BANKROLL_ALLOW_FRESH_ALLOCATION:
+            return "SIM_BANKROLL_ALLOW_FRESH_ALLOCATION is set -- unset it after this restart"
+        before = previous.get("allocation_dollars")
+        if before is None or abs(float(before) - self._sim.allocation_dollars) > 1e-9:
+            return f"allocation changed (${before} -> ${self._sim.allocation_dollars:.2f})"
+        before_id = previous.get("allocation_id") or ""
+        if before_id != config.SIM_BANKROLL_ALLOCATION_ID:
+            return f"new allocation id ({before_id!r} -> {config.SIM_BANKROLL_ALLOCATION_ID!r})"
+        return ""
 
     def _own_filled_orders(self, min_ts: float) -> list[tuple[dict, str]] | None:
         """This runner's filled orders since `min_ts`, from the account's
@@ -539,6 +573,7 @@ class OrderManager:
         status = self._sim.snapshot()
         status["order_tag"] = self.order_tag
         status["shared_account"] = self._shared_account
+        status["allocation_id"] = config.SIM_BANKROLL_ALLOCATION_ID
         status["updated_ts"] = time.time()
         if result is not None:
             status["last_check"] = {
