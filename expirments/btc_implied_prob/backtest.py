@@ -66,7 +66,7 @@ from derbit.fetch_historical import get_historical_volatility  # noqa: E402
 
 import config  # noqa: E402
 import fees  # noqa: E402
-from black_scholes import prob_forward_above_strike, prob_forward_below_strike  # noqa: E402
+from black_scholes import digital_above_delta, prob_forward_above_strike, prob_forward_below_strike  # noqa: E402
 from kalshi_btc_markets import _extract_strike, _parse_time  # noqa: E402
 from kalshi_gateway import BASE_URL, fetch_series, fetch_trades  # noqa: E402
 from fetch_historical import _get_with_retry as _kalshi_get_with_retry  # noqa: E402  (Kalshi client, path injected by kalshi_gateway above)
@@ -249,12 +249,28 @@ def fetch_trade_prices(ticker: str, open_time: datetime, close_time: datetime) -
     return prices
 
 
+_TIMESTAMPS: dict[int, tuple[list, list[float]]] = {}  # id(series) -> (series, its timestamps)
+
+
+def _timestamps(series: list[tuple[float, float]]) -> list[float]:
+    """The series' timestamps, built once per series rather than per lookup
+    (the candle series is looked up every tick of every market). Short
+    series (one market's trades) aren't cached: there are thousands."""
+    if len(series) < 1000:
+        return [t for t, _ in series]
+    cached = _TIMESTAMPS.get(id(series))
+    if cached is None or cached[0] is not series or len(cached[1]) != len(series):
+        cached = (series, [t for t, _ in series])
+        _TIMESTAMPS[id(series)] = cached
+    return cached[1]
+
+
 def _value_at_or_before(series: list[tuple[float, float]], epoch_seconds: float) -> float | None:
     """Last (timestamp, value) in an ascending-by-timestamp series with
     timestamp <= epoch_seconds, or None if the series doesn't reach back
     that far.
     """
-    timestamps = [t for t, _ in series]
+    timestamps = _timestamps(series)
     i = bisect.bisect_right(timestamps, epoch_seconds) - 1
     return series[i][1] if i >= 0 else None
 
@@ -271,6 +287,7 @@ class Trial:
     fee_dollars: float
     correct: bool  # favored_side matched the actual result
     pnl_per_contract: float  # (1.0 if correct else 0.0) - trade_price - fee, i.e. buy-and-hold-to-settlement P&L
+    hedge_cost: float = 0.0  # expected hedge cost per contract already taken off edge_after_fee (backtest_hedge.py)
 
 
 def find_first_signal(
@@ -280,6 +297,7 @@ def find_first_signal(
     trade_prices: list[tuple[float, float]],
     tick_seconds: float,
     edge_threshold: float,
+    hedge_cost_fn=None,
 ) -> Trial | None:
     """Walks forward tick-by-tick through this market's own real entry
     window -- [open_time, close_time - MIN_SECONDS_TO_CLOSE], further capped
@@ -289,6 +307,10 @@ def find_first_signal(
     re-entry" behavior as strategy.py's _execute. None if no tick in the
     window ever qualifies (including if the window is empty, or the market
     has no usable trade price at any tick).
+
+    `hedge_cost_fn(epoch, abs_delta_btc, seconds_to_close)`, when given,
+    returns the expected perp-hedge cost per contract, taken off the edge the
+    same way strategy._evaluate does (see backtest_hedge.py).
     """
     close_epoch = market.close_time.timestamp()
     window_start = max(market.open_time.timestamp(), close_epoch - config.MAX_SECONDS_TO_CLOSE)
@@ -322,6 +344,14 @@ def find_first_signal(
 
         fee_dollars = fees.estimate_fee_dollars(trade_price, 1.0)
         edge_after_fee = (favored_probability - trade_price) - fee_dollars
+        hedge_cost = 0.0
+        if hedge_cost_fn is not None and edge_after_fee >= edge_threshold:
+            abs_delta = digital_above_delta(spot, market.strike, sigma, years_to_expiry)
+            hedge_cost = hedge_cost_fn(tick, abs_delta, seconds_to_close)
+            if hedge_cost is None:  # no perp quote at this tick: can't price the hedge, don't enter
+                tick += tick_seconds
+                continue
+            edge_after_fee -= hedge_cost
         if edge_after_fee < edge_threshold:
             tick += tick_seconds
             continue
@@ -338,6 +368,7 @@ def find_first_signal(
             fee_dollars=fee_dollars,
             correct=correct,
             pnl_per_contract=(1.0 if correct else 0.0) - trade_price - fee_dollars,
+            hedge_cost=hedge_cost,
         )
 
     return None
