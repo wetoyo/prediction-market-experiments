@@ -11,8 +11,10 @@ is a JSON file in $LOGGERS_HOME/tasks/ and its data goes to
 $LOGGERS_HOME/data/NAME/ (LOGGERS_HOME defaults to ~/loggers). A task runs
 as a *transient* systemd unit, logger-NAME: it has a fixed expiry, nothing
 restarts it, and it doesn't come back after a reboot unless you `resume`.
-The unit runs at low priority (Nice 10, idle I/O, CPUQuota, MemoryMax), so
-a logger can't starve the live trading service sharing the box. It has a
+The unit runs at low priority (Nice 10, idle I/O, CPUQuota, MemoryMax -- not
+enforced on the Pi, whose kernel disables the memory cgroup, so the runner
+also stops itself past the task's max_rss_mb), so a logger can't starve the
+live trading service sharing the box. It has a
 hard runtime limit of the task's remaining time plus 10 minutes, on top of
 the runner's own expiry.
 
@@ -106,7 +108,7 @@ def cmd_start(args) -> None:
     options = dict(o.split("=", 1) for o in args.option)
     task = {
         "name": args.name, "logger": args.logger, "interval_seconds": args.interval, "max_mb": args.max_mb,
-        "min_free_mb": MIN_FREE_MB, "options": options, "out_dir": str(DATA / args.name),
+        "min_free_mb": MIN_FREE_MB, "max_rss_mb": 200, "options": options, "out_dir": str(DATA / args.name),
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=args.days)).isoformat(timespec="seconds"),
     }

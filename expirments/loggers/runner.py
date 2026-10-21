@@ -10,7 +10,9 @@ Every `interval_seconds` it calls the task's logger module's
 `collect(ctx)`, which yields (stream, record) pairs, and buffers them to
 store.Writer. It stops on its own -- flushing first -- at whichever comes
 first: the task's `expires_at`, its data passing `max_mb`, the disk's free
-space falling under `min_free_mb`, or SIGTERM. An exception inside one tick
+space falling under `min_free_mb`, its memory passing `max_rss_mb` (checked
+here because the Pi's kernel has the memory cgroup disabled, so systemd's
+MemoryMax isn't enforced there), or SIGTERM. An exception inside one tick
 is logged and counted, not fatal. Progress goes to <out_dir>/status.json.
 
 A logger module (see btc_implied_prob_quotes.py) is any module in this
@@ -24,6 +26,7 @@ logged less often than every tick), `ctx.state` is a dict kept across ticks.
 import importlib
 import json
 import logging
+import os
 import shutil
 import signal
 import sys
@@ -57,6 +60,15 @@ class Context:
         return False
 
 
+def _rss_mb() -> float | None:
+    """Current resident memory, Linux only (None elsewhere)."""
+    try:
+        with open("/proc/self/statm") as fh:
+            return int(fh.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1e6
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def _parse(ts: str) -> float:
     return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
 
@@ -71,6 +83,7 @@ def run(task_path: str) -> str:
     interval = float(task.get("interval_seconds", 60))
     max_bytes = float(task.get("max_mb", 50)) * 1e6
     min_free = float(task.get("min_free_mb", 300)) * 1e6
+    max_rss = float(task.get("max_rss_mb", 200))
     out_dir = Path(task["out_dir"])
     writer = store.Writer(out_dir, flush_seconds=float(task.get("flush_seconds", 300)))
     status_path = out_dir / "status.json"
@@ -107,6 +120,8 @@ def run(task_path: str) -> str:
             reason = f"size cap {max_bytes / 1e6:.0f} MB reached"
         elif shutil.disk_usage(out_dir).free < min_free:
             reason = f"disk free below {min_free / 1e6:.0f} MB"
+        elif (rss := _rss_mb()) is not None and rss > max_rss:
+            reason = f"memory {rss:.0f} MB over {max_rss:.0f} MB"
         if reason:
             break
 

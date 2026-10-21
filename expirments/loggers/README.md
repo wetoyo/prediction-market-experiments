@@ -10,8 +10,9 @@ the data off afterwards and backtest it somewhere else.
 - `loggerctl.py` starts, stops, lists and resumes tasks, each as a
   **transient** systemd unit (`logger-<name>`). Nothing restarts a task, and a
   task doesn't come back after a reboot unless you `resume` it. Units run at
-  Nice 10, with idle I/O, `CPUQuota=50%` and `MemoryMax=250M`, plus a hard
-  runtime limit.
+  Nice 10, with idle I/O, `CPUQuota=50%` and a hard runtime limit. The runner
+  stops itself past 200 MB of memory, because the Pi's kernel ignores systemd's
+  `MemoryMax`.
 - `store.py` handles the format: `data/<task>/<stream>/<YYYY-MM-DD>.jsonl.gz`,
   appended as one gzip member per flush, so a crash loses at most a few
   minutes. `store.read(dir, stream, start, end)` loads it back.
