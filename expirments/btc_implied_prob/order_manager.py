@@ -18,6 +18,7 @@ background sync (start_ledger). See config.py's "Per-runner bankroll".
 """
 
 import logging
+import math
 import sys
 from pathlib import Path
 
@@ -222,3 +223,65 @@ class OrderManager:
             response.get("average_fill_price", "-"), response.get("average_fee_paid", "-"),
         )
         return response
+
+    # -- perps margin (live only; hedger.PerpHedger._fund) ---------------------
+
+    def get_perp_taker_fee_rate(self, ticker: str) -> float:
+        """This account's perps taker fee (fraction of notional), or
+        config.HEDGE_TAKER_FEE_RATE in dry-run or when it can't be read."""
+        if self.dry_run:
+            return config.HEDGE_TAKER_FEE_RATE
+        try:
+            rate = self._client.get_margin_fee_tiers().get("taker_fee_rates", {}).get(ticker)
+        except Exception:
+            logger.exception("couldn't read perps fee tiers, pricing hedges at the configured taker fee")
+            return config.HEDGE_TAKER_FEE_RATE
+        return float(rate) if rate is not None else config.HEDGE_TAKER_FEE_RATE
+
+    def get_margin_equity(self) -> float:
+        """The margin instance's equity (cash plus open perp P&L), all of it
+        this runner's -- no other runner trades perps."""
+        balance = self._client.get_margin_balance()
+        return sum(float(b.get("account_equity") or 0.0) for b in balance.get("subaccount_balances", []))
+
+    def transfer_margin(self, dollars: float) -> tuple[str | None, float]:
+        """Moves `dollars` to the margin instance (negative: back from it) and
+        books it in the ledger. Out-transfers are capped at this runner's own
+        fundable cash (get_balance_dollars: the ledger's, with
+        SIZE_FROM_SIM_BANKROLL). Returns (transfer id, signed dollars moved),
+        or (None, 0.0) when nothing was sent."""
+        if dollars > 0:
+            dollars = min(dollars, self.get_balance_dollars())
+            if self.ledger is not None and self.ledger.sim.initialized:
+                dollars = min(dollars, self.ledger.sim.available_cash())
+        dollars = math.floor(abs(dollars) * 10000) / 10000 * (1 if dollars > 0 else -1)  # Kalshi takes centicents
+        if abs(dollars) < 0.01:
+            return None, 0.0
+        if self.ledger is not None and not self.ledger.sim.initialized:
+            logger.warning("not moving margin: the ledger isn't initialized yet")
+            return None, 0.0
+        source, destination = ("event_contract", "margined") if dollars > 0 else ("margined", "event_contract")
+        logger.warning("MARGIN TRANSFER: $%.4f %s -> %s", abs(dollars), source, destination)
+        transfer_id = self._client.transfer_between_instances(source, destination, abs(dollars))["transfer_id"]
+        if self.ledger is not None:
+            if dollars > 0:
+                self.ledger.sim.move_to_margin(transfer_id, dollars)
+            else:
+                self.ledger.sim.move_from_margin(transfer_id, -dollars)
+        return transfer_id, dollars
+
+    def margin_transfers_in_flight(self) -> list[str]:
+        if self.ledger is None:
+            return []
+        return list(self.ledger.sim.transfers_in_flight)
+
+    def margin_transfer_landed(self, transfer_id: str) -> None:
+        if self.ledger is not None:
+            self.ledger.sim.transfer_landed(transfer_id)
+
+    def mark_margin(self, equity: float) -> None:
+        if self.ledger is None:
+            return
+        pnl = self.ledger.sim.mark_margin(equity)
+        if pnl:
+            logger.info("hedge P&L since last mark: $%+.4f (margin equity $%.4f)", pnl, equity)

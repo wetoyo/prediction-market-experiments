@@ -81,12 +81,32 @@ delta blows up near the strike at expiry and can't be chased once a tick),
 and with nothing open the hedge goes flat. Live, the held perp position is
 read back from `/margin/positions` every tick; dry-run simulates it.
 
-The perp trades on Kalshi's margin exchange instance, which has its **own
-cash**: transfer funds over first
-(`KalshiTradingClient.transfer_between_instances("event_contract",
-"margined", dollars)`), or every hedge order is rejected. The per-runner
-ledger only tracks the event-contract side. Perp fees and funding aren't in
-the entry edge.
+**Margin funding.** The perp trades on Kalshi's margin exchange instance,
+which has its own cash. The hedger funds it itself, out of this runner's own
+allocation: each tick it reads the margin equity and, when it drifts outside
+`HEDGE_MARGIN_TOPUP_RATIO`..`HEDGE_MARGIN_SWEEP_RATIO` times the initial
+margin the hedge needs (notional / the perp's leverage estimate), transfers
+the difference to or from `HEDGE_MARGIN_TARGET_RATIO` times it. Top-ups come
+out of the ledger's available cash only (never another runner's share, and
+nothing while the allocation guard blocks this runner); with nothing hedged,
+all of it comes back. The ledger (`../shared/sim_bankroll.py`) books transfers
+into a `margin` bucket, set aside like the profit-skim `reserve` and left out
+of the balance checks; the change in margin equity between ticks is the
+hedge's P&L and goes into `trading_pnl`, so profit skimming sees it. One
+transfer at a time, each "in flight" until it shows on the margin side (or
+`HEDGE_TRANSFER_TIMEOUT_SECONDS`), during which the balance checks report it
+instead of counting a divergence. If the margin can't carry the full hedge,
+the hedge is clipped to what it can.
+
+**Hedge cost in the entry.** Every signal's edge is net of the expected
+hedge cost per contract: (perp taker fee + half the perp spread) x
+`HEDGE_TURNOVER` x the position's delta notional, plus funding at the current
+estimated rate for as long as it would be hedged (zero for an entry already
+inside the stop window). The taker fee is this account's own rate from
+`/margin/fee_tiers` live, `HEDGE_TAKER_FEE_RATE` otherwise. Sizing also sets
+aside `HEDGE_MARGIN_TARGET_RATIO` x each entry's hedge margin from the cash it
+sizes against, so entries can't spend what the hedge needs. A tick where the
+perp can't be quoted places no entries and doesn't hedge.
 
 **8. Position tracking** (`positions_store.py`): `open_positions` is tracked
 unconditionally, persisted to
@@ -121,6 +141,9 @@ see that file for the full list: `EDGE_THRESHOLD`, `MIN_SECONDS_TO_CLOSE`,
 `MAX_CONTRACTS_PER_TRADE`, `DRY_RUN_SIMULATED_BALANCE_DOLLARS`, `DRY_RUN`,
 `ENABLE_PERP_HEDGE`, `PERP_HEDGE_TICKER`, `HEDGE_REBALANCE_CONTRACTS`,
 `HEDGE_MAX_CONTRACTS`, `HEDGE_STOP_SECONDS_BEFORE_CLOSE`, `HEDGE_MAX_SLIPPAGE`,
+`HEDGE_TURNOVER`, `HEDGE_TAKER_FEE_RATE`, `HEDGE_MARGIN_TOPUP_RATIO`,
+`HEDGE_MARGIN_TARGET_RATIO`, `HEDGE_MARGIN_SWEEP_RATIO`,
+`HEDGE_MIN_TRANSFER_DOLLARS`, `HEDGE_TRANSFER_TIMEOUT_SECONDS`,
 `POSITIONS_STATE_PATH`).
 
 Each module also has a `__main__` smoke test:

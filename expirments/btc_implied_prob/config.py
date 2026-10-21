@@ -98,8 +98,8 @@ DERIBIT_CURRENCY = "BTC"
 # Deribit sigma/forward the entry was priced off -- see deribit_iv.
 # estimate_delta_yes) and trades the perp toward the opposite exposure. The
 # perp trades on Kalshi's margin exchange instance, which has its own cash:
-# move funds over first (KalshiTradingClient.transfer_between_instances), or
-# every hedge order gets rejected. Dry-run simulates the hedge position.
+# hedger.py moves this runner's own ledger cash over and back as the hedge
+# needs it. Dry-run simulates the hedge position and skips the transfers.
 ENABLE_PERP_HEDGE = _bool_env("BTC_IMPLIED_PROB_ENABLE_PERP_HEDGE", True)
 
 # KXBTCPERP is 0.0001 BTC per contract, whole contracts only (2026-10-21).
@@ -126,6 +126,31 @@ HEDGE_STOP_SECONDS_BEFORE_CLOSE = _float_env("BTC_IMPLIED_PROB_HEDGE_STOP_SECOND
 # Hedge orders are IOC limits this fraction through the top of book
 # (0.0005 = 5bp), so a fast market can't fill them at an arbitrary price.
 HEDGE_MAX_SLIPPAGE = _float_env("BTC_IMPLIED_PROB_HEDGE_MAX_SLIPPAGE", 0.0005)
+
+# Expected hedge cost, taken off every signal's edge (hedger.
+# hedge_cost_per_contract): the perp's taker fee plus half its spread, paid on
+# HEDGE_TURNOVER times the position's delta notional (opening the hedge, unwinding
+# it, plus about as much again rebalancing), plus funding at the current
+# estimated rate for as long as it'd be hedged. Live, the taker fee is this
+# account's own rate from /margin/fee_tiers; HEDGE_TAKER_FEE_RATE is the
+# fallback and the dry-run value (an assumption -- Kalshi's fee tiers need auth).
+HEDGE_TURNOVER = _float_env("BTC_IMPLIED_PROB_HEDGE_TURNOVER", 3.0)
+HEDGE_TAKER_FEE_RATE = _float_env("BTC_IMPLIED_PROB_HEDGE_TAKER_FEE_RATE", 0.001)
+
+# Margin funding (hedger.PerpHedger._fund), all in multiples of the initial
+# margin the hedge needs (notional / the perp's leverage estimate). Below
+# TOPUP_RATIO, transfer from this runner's ledger cash up to TARGET_RATIO;
+# above SWEEP_RATIO, transfer the excess back down to TARGET_RATIO. Each new
+# entry also sets aside TARGET_RATIO x its own hedge's margin from the cash it
+# sizes against, so entries can't spend the money the hedge will need.
+HEDGE_MARGIN_TOPUP_RATIO = _float_env("BTC_IMPLIED_PROB_HEDGE_MARGIN_TOPUP_RATIO", 1.5)
+HEDGE_MARGIN_TARGET_RATIO = _float_env("BTC_IMPLIED_PROB_HEDGE_MARGIN_TARGET_RATIO", 2.0)
+HEDGE_MARGIN_SWEEP_RATIO = _float_env("BTC_IMPLIED_PROB_HEDGE_MARGIN_SWEEP_RATIO", 3.0)
+# Smaller top-ups/sweeps aren't worth a transfer.
+HEDGE_MIN_TRANSFER_DOLLARS = _float_env("BTC_IMPLIED_PROB_HEDGE_MIN_TRANSFER_DOLLARS", 1.0)
+# Transfers are asynchronous; stop waiting for one to show on the margin side
+# after this long (the ledger's balance check flags it if it never happened).
+HEDGE_TRANSFER_TIMEOUT_SECONDS = _float_env("BTC_IMPLIED_PROB_HEDGE_TRANSFER_TIMEOUT_SECONDS", 300.0)
 
 # Where strategy.py's open_positions dict is persisted between ticks (and
 # reloaded across restarts). Added 2026-08-15 after a live incident: with no

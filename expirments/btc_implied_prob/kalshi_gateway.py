@@ -40,7 +40,16 @@ def fetch_margin_market(ticker: str) -> dict:
     return response.json()["market"]
 
 
+def fetch_margin_funding_estimate(ticker: str) -> dict:
+    """The perp's in-progress funding period: `funding_rate` (fraction of
+    notional, longs pay shorts when positive), `next_funding_time`. Public."""
+    response = requests.get(f"{BASE_URL}/margin/funding_rates/estimate", params={"ticker": ticker}, timeout=20)
+    response.raise_for_status()
+    return response.json()
+
+
 __all__ = [
-    "fetch_series", "fetch_markets", "fetch_orderbook", "fetch_market", "fetch_margin_market", "fetch_trades",
+    "fetch_series", "fetch_markets", "fetch_orderbook", "fetch_market", "fetch_margin_market",
+    "fetch_margin_funding_estimate", "fetch_trades",
     "KalshiTradingClient",
 ]

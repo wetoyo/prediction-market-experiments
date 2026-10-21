@@ -18,7 +18,10 @@ Benchmarks index basis risk, thin near-dated smiles).
 Every position rides to settlement ($1 or $0) -- no take-profit or stop-loss
 (both removed 2026-10-21). Instead, with config.ENABLE_PERP_HEDGE on, each
 tick hedger.PerpHedger offsets the open positions' combined BTC delta with
-Kalshi's BTC perpetual -- see hedger.py.
+Kalshi's BTC perpetual, funding its margin out of this runner's own ledger
+cash -- see hedger.py. The hedge's expected cost comes off every signal's
+edge, and the margin it'll need is set aside from the cash entries size
+against.
 
 open_positions is tracked unconditionally and persisted to config.POSITIONS_STATE_PATH every tick, reloaded on
 startup, and reconciled against Kalshi's real account state once at the start
@@ -39,7 +42,7 @@ import config
 import deribit_iv
 import fees
 import positions_store
-from hedger import PerpHedger
+import hedger
 from kalshi_btc_markets import ActiveMarket, find_active_btc_markets
 from order_manager import OrderManager, OrderRefused
 
@@ -56,11 +59,17 @@ class TradeSignal:
     favored_side: str  # "yes" or "no"
     favored_probability: float  # model probability that favored_side wins
     trade_price: float  # dollars, cost to buy one contract of favored_side
-    edge_after_fee: float
+    edge_after_fee: float  # after Kalshi's fee and the expected hedge cost
     extrapolated: bool
+    hedge_cost: float = 0.0  # dollars per contract, already in edge_after_fee
+    hedge_margin: float = 0.0  # dollars per contract the hedge keeps on the margin instance
 
 
-def _evaluate(market: ActiveMarket, surface: deribit_iv.Surface, now: datetime) -> TradeSignal | None:
+def _evaluate(
+    market: ActiveMarket, surface: deribit_iv.Surface, now: datetime, perp: "hedger.PerpQuote | None" = None,
+) -> TradeSignal | None:
+    """`perp`: this tick's perp quote, to price the hedge into the edge (None
+    with the hedge off)."""
     seconds_to_close = (market.close_time - now).total_seconds()
     if not (config.MIN_SECONDS_TO_CLOSE <= seconds_to_close <= config.MAX_SECONDS_TO_CLOSE):
         return None
@@ -85,7 +94,14 @@ def _evaluate(market: ActiveMarket, surface: deribit_iv.Surface, now: datetime) 
     edge_raw = favored_probability - trade_price
 
     fee_per_contract = fees.estimate_fee_dollars(trade_price, 1.0)
-    edge_after_fee = edge_raw - fee_per_contract
+    hedge_cost = hedge_margin = 0.0
+    if perp is not None:
+        abs_delta = abs(deribit_iv.estimate_delta_yes(
+            surface, direction=market.direction, strike=market.strike, seconds_to_expiry=seconds_to_close,
+        ))
+        hedge_cost = hedger.hedge_cost_per_contract(abs_delta, seconds_to_close, perp)
+        hedge_margin = hedger.hedge_margin_per_contract(abs_delta, seconds_to_close, perp)
+    edge_after_fee = edge_raw - fee_per_contract - hedge_cost
 
     return TradeSignal(
         market=market,
@@ -97,10 +113,14 @@ def _evaluate(market: ActiveMarket, surface: deribit_iv.Surface, now: datetime) 
         trade_price=trade_price,
         edge_after_fee=edge_after_fee,
         extrapolated=estimate.extrapolated,
+        hedge_cost=hedge_cost,
+        hedge_margin=hedge_margin,
     )
 
 
-def scan(markets: list[ActiveMarket], surface: deribit_iv.Surface) -> list[TradeSignal]:
+def scan(
+    markets: list[ActiveMarket], surface: deribit_iv.Surface, perp: "hedger.PerpQuote | None" = None,
+) -> list[TradeSignal]:
     """Evaluates every given market against the Deribit-implied model,
     returning signals sorted best-edge-first. Takes markets/surface as
     params (fetched once per tick by main(), or ad hoc by a caller) rather
@@ -111,7 +131,7 @@ def scan(markets: list[ActiveMarket], surface: deribit_iv.Surface) -> list[Trade
     now = datetime.now(timezone.utc)
     signals = []
     for market in markets:
-        signal = _evaluate(market, surface, now)
+        signal = _evaluate(market, surface, now, perp)
         if signal is not None:
             signals.append(signal)
 
@@ -124,12 +144,12 @@ def _print_signals(signals: list[TradeSignal]) -> None:
     print(f"{len(signals)} markets passed liquidity/time filters, {len(candidates)} clear EDGE_THRESHOLD")
     if not candidates:
         return
-    print(f"{'ticker':28s} {'side':4s} {'model':>7s} {'mkt_mid':>7s} {'price':>7s} {'edge':>7s} closes_in")
+    print(f"{'ticker':28s} {'side':4s} {'model':>7s} {'mkt_mid':>7s} {'price':>7s} {'hedge':>7s} {'edge':>7s} closes_in")
     for s in candidates:
         flag = "*" if s.extrapolated else " "
         print(
             f"{s.market.ticker:28s} {s.favored_side:4s} {s.model_prob_yes:7.4f} {s.yes_mid:7.4f} "
-            f"{s.trade_price:7.4f} {s.edge_after_fee:+7.4f}{flag} {s.seconds_to_close:.0f}s"
+            f"{s.trade_price:7.4f} {s.hedge_cost:7.4f} {s.edge_after_fee:+7.4f}{flag} {s.seconds_to_close:.0f}s"
         )
     if any(s.extrapolated for s in candidates):
         print("* target close time falls outside Deribit's listed expiry range (extrapolated smile) -- "
@@ -187,6 +207,9 @@ def _execute(signals: list[TradeSignal], open_positions: dict, manager: OrderMan
     bankroll_dollars = _bankroll_dollars(manager)
     if bankroll_dollars is None:
         return
+    # Cash still uncommitted this pass: each entry spends its cost plus the
+    # margin its hedge will draw from the same cash (hedger.PerpHedger._fund).
+    uncommitted = bankroll_dollars
     for s in signals:
         if s.edge_after_fee < config.EDGE_THRESHOLD:
             continue
@@ -201,7 +224,9 @@ def _execute(signals: list[TradeSignal], open_positions: dict, manager: OrderMan
             continue
 
         raw_contracts = _kelly_contracts(s.favored_probability, s.trade_price, bankroll_dollars)
-        contracts = math.floor(min(raw_contracts, config.MAX_CONTRACTS_PER_TRADE))
+        cash_per_contract = s.trade_price + fees.estimate_fee_dollars(s.trade_price, 1.0) + s.hedge_margin
+        affordable = uncommitted / cash_per_contract
+        contracts = math.floor(min(raw_contracts, affordable, config.MAX_CONTRACTS_PER_TRADE))
         if contracts < 1:
             logger.info(
                 "%s kelly size rounds to 0 contracts (raw=%.3f, bankroll=%.2f), skipping",
@@ -218,6 +243,7 @@ def _execute(signals: list[TradeSignal], open_positions: dict, manager: OrderMan
             )
         except OrderRefused:
             continue  # over this runner's ledger cash; logged by order_manager, nothing placed
+        uncommitted -= contracts * cash_per_contract
 
         open_positions[s.market.ticker] = {
             "market": s.market, "side": s.favored_side,
@@ -252,7 +278,8 @@ def main() -> None:
     # positions_store's module docstring for the incident this is a response to.
     open_positions: dict = positions_store.load(config.POSITIONS_STATE_PATH)
     reconciled = False
-    hedger = PerpHedger(manager) if config.ENABLE_PERP_HEDGE else None
+    perp_hedger = hedger.PerpHedger(manager) if config.ENABLE_PERP_HEDGE else None
+    taker_fee_rate = manager.get_perp_taker_fee_rate(config.PERP_HEDGE_TICKER) if perp_hedger else 0.0
 
     while True:
         surface = deribit_iv.build_surface(config.DERIBIT_CURRENCY)
@@ -272,7 +299,17 @@ def main() -> None:
             positions_store.reconcile_with_kalshi(open_positions, manager, markets_by_ticker)
             reconciled = True
 
-        signals = scan(markets, surface) if markets else []
+        perp = None
+        if perp_hedger is not None:
+            try:
+                perp = hedger.fetch_perp_quote(config.PERP_HEDGE_TICKER, taker_fee_rate)
+            except Exception:
+                # No hedge price means no hedge cost to price entries with: skip
+                # entries and the hedge this tick rather than trade unhedged.
+                logger.exception("couldn't quote %s -- no entries or hedging this tick", config.PERP_HEDGE_TICKER)
+                markets = []
+
+        signals = scan(markets, surface, perp) if markets else []
         _print_signals(signals)
         qualifying = [s for s in signals if s.edge_after_fee >= config.EDGE_THRESHOLD]
         if args.execute and qualifying:
@@ -283,8 +320,8 @@ def main() -> None:
             # Every tick, even with nothing open: a hedge left over from settled
             # positions (or a restart) gets unwound to flat. Skipped without a
             # surface -- no deltas to hedge against, so don't trade blind.
-            if hedger is not None and surface.expiries:
-                hedger.rebalance(open_positions, surface)
+            if perp is not None and surface.expiries:
+                perp_hedger.rebalance(open_positions, surface, perp)
             positions_store.save(config.POSITIONS_STATE_PATH, open_positions)
 
         if args.loop is None:

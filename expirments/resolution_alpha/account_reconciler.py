@@ -135,6 +135,9 @@ class AccountReconciler:
                 problems.append(f"{name}: status {now - float(status.get('updated_ts') or 0.0):.0f}s old")
             elif status.get("pending_exact_orders"):
                 problems.append(f"{name}: exact fill cost not fetched yet")
+            elif status.get("transfers_in_flight"):
+                # Booked out of sim_cash, maybe not out of the real balance yet.
+                problems.append(f"{name}: margin transfer in flight")
         if problems:
             self.inconclusive_checks += 1
             self._suspect = None

@@ -66,6 +66,20 @@ owner then makes on kalshi.com drops the real balance; declared beforehand
 reserve instead of reading it as divergence. `trading_pnl` sums every cash
 change that came from trading (fills, pair redemptions, settlements) and
 nothing else, for the skim rules to measure profit by.
+
+Margin (perps collateral, added 2026-10-21 for btc_implied_prob's perp
+hedge): Kalshi's perps trade on a separate exchange instance with its own
+cash, funded by transfers out of the event-contract balance. Money this
+runner moves there leaves its trading cash for `margin` -- still its own,
+but out of the event balance the check (and account_reconciler.py, and
+allocation_guard.py) compares against, so it is left out of all three, the
+same way the reserve is set aside. `mark_margin` re-reads the margin
+instance's equity; the change since the last mark is the hedge's P&L (perp
+fills, fees, funding) and goes into `trading_pnl`. Transfers are processed
+asynchronously, so each one is "in flight" until the hedger sees it land on
+the margin side: while it is, a gap equal to the in-flight amount is
+reported as "transfer" (not counted as divergence), and marks are skipped
+(the equity read could predate the credit).
 """
 
 import logging
@@ -135,6 +149,10 @@ class SimulatedBankroll:
         self.trading_pnl = 0.0  # this process's cash change from trading only
         self.pending_withdrawals: dict[str, float] = {}  # declared id -> dollars, until the balance drop shows
         self.matched_withdrawals: list[dict] = []  # applied withdrawals, drained by profit_skim.py
+        self.margin = 0.0  # this runner's money on the perps margin instance, as of the last mark
+        self.margin_marked = False  # False until the first mark (a fresh ledger adopts what's there)
+        # transfer id -> {"dollars": + out of / - back into the event balance, "ts"}, until it lands
+        self.transfers_in_flight: dict[str, dict] = {}
 
         self.checks = 0
         self.inconclusive_checks = 0
@@ -214,6 +232,9 @@ class SimulatedBankroll:
             self.cash = float(state.get("ledger_cash", state["sim_cash"]))
             self.holds = {i: float(d) for i, d in (state.get("holds") or {}).items()}
             self.reserve = float(state.get("reserve", self.reserve))
+            self.margin = float(state.get("margin", 0.0))
+            self.margin_marked = bool(state.get("margin_marked", False))
+            self.transfers_in_flight = {i: dict(t) for i, t in (state.get("transfers_in_flight") or {}).items()}
             if keep_offset and state.get("offset") is not None:
                 self.offset = float(state["offset"])
             else:
@@ -461,6 +482,11 @@ class SimulatedBankroll:
             if abs(gap) <= self.tolerance_dollars:
                 self._suspect_gap = None
                 return CheckResult("ok", **base)
+            in_flight = sum(t["dollars"] for t in self.transfers_in_flight.values())
+            if in_flight and abs(gap + in_flight) <= self.tolerance_dollars:
+                # Booked, but the event balance hasn't moved yet.
+                self._suspect_gap = None
+                return CheckResult("transfer", reason=f"${in_flight:+.4f} margin transfer(s) in flight", **base)
             matched = self._match_withdrawal(gap)
             if matched:
                 self._suspect_gap = None
@@ -548,6 +574,47 @@ class SimulatedBankroll:
             {"id": withdrawal_id, "dollars": dollars, "from_reserve": from_reserve, "ts": time.time()}
         )
 
+    # -- margin (perps collateral) -------------------------------------------
+
+    def move_to_margin(self, transfer_id: str, dollars: float) -> float:
+        """Book a transfer of up to `dollars` of available cash to the margin
+        instance (call once Kalshi accepted it). Returns what was booked."""
+        with self._lock:
+            moved = max(0.0, min(dollars, self._available()))
+            if moved > 0:
+                self.cash -= moved
+                self.margin += moved
+                self.transfers_in_flight[transfer_id] = {"dollars": moved, "ts": time.time()}
+            return moved
+
+    def move_from_margin(self, transfer_id: str, dollars: float) -> None:
+        """Book a transfer of `dollars` back from the margin instance."""
+        with self._lock:
+            if dollars > 0:
+                self.cash += dollars
+                self.margin -= dollars
+                self.transfers_in_flight[transfer_id] = {"dollars": -dollars, "ts": time.time()}
+
+    def transfer_landed(self, transfer_id: str) -> None:
+        with self._lock:
+            self.transfers_in_flight.pop(transfer_id, None)
+
+    def mark_margin(self, equity: float) -> float | None:
+        """The margin instance's equity now. The first mark adopts it (money
+        already there when the ledger started); later ones book the change
+        as trading P&L. Skipped (None) while a transfer is in flight. Returns
+        the P&L booked."""
+        with self._lock:
+            if self.transfers_in_flight:
+                return None
+            if not self.margin_marked:
+                self.margin, self.margin_marked = equity, True
+                return 0.0
+            pnl = equity - self.margin
+            self.margin = equity
+            self.trading_pnl += pnl
+            return pnl
+
     def snapshot(self) -> dict:
         with self._lock:
             return {
@@ -563,6 +630,10 @@ class SimulatedBankroll:
                 "ledger_cash": round(self.cash, 6),
                 # account_reconciler.py sums sim_cash + reserve against the real balance.
                 "reserve": round(self.reserve, 6),
+                # Perps collateral: this runner's, but not in the event balance.
+                "margin": round(self.margin, 6),
+                "margin_marked": self.margin_marked,
+                "transfers_in_flight": {i: dict(t) for i, t in self.transfers_in_flight.items()},
                 "trading_pnl": round(self.trading_pnl, 6),
                 "pending_withdrawals": dict(self.pending_withdrawals),
                 "holds": dict(self.holds),
