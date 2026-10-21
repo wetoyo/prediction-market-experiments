@@ -1,5 +1,5 @@
 """Offline, no-network regression test for the 2026-08-15 incident: with
-open_positions tracked only when config.ENABLE_TRAILING_EXIT was on,
+open_positions tracked only when an exit toggle (since removed) was on,
 _execute had no record of tickers it already held and re-bought the same
 ones every tick. Pins the fix (unconditional dedup) plus positions_store's
 save/load round-trip and Kalshi reconciliation. Run directly:
@@ -9,9 +9,6 @@ save/load round-trip and Kalshi reconciliation. Run directly:
 
 import json
 from datetime import datetime, timedelta, timezone
-
-import config
-config.ENABLE_TRAILING_EXIT = False  # the exact condition that let the bug through -- toggle OFF
 
 import positions_store
 import strategy
@@ -70,10 +67,9 @@ assert len(manager.buy_calls) == 1, (
 )
 print("PASS  dedup_prevents_reentry_on_open_ticker")
 
-# 2. Tracking must happen even with ENABLE_TRAILING_EXIT off (the exact condition that hid the bug).
-assert config.ENABLE_TRAILING_EXIT is False
+# 2. The bought position is tracked with what the hedge needs.
 assert open_positions["T1"]["side"] == "yes" and open_positions["T1"]["contracts"] > 0
-print("PASS  position_tracked_even_with_exit_toggle_off")
+print("PASS  position_tracked")
 
 # 3. positions_store save/load round-trip.
 tmp_path = "test_positions_state.tmp.json"

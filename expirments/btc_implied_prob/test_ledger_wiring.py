@@ -1,10 +1,10 @@
 """Offline, no-network test of the per-runner ledger wiring (2026-09-26):
 order_manager.OrderManager with a ../shared/tagged_ledger.py ledger over a
 fake Kalshi account (../shared/tests/fake_kalshi.py). Checks orders are
-tagged and booked, a resting take-profit's later fill lands in the ledger,
+tagged and booked, a resting GTC order's later fill lands in the ledger,
 SIZE_FROM_SIM_BANKROLL sizes off and caps at the ledger, a refused entry
 isn't registered as a position, and shared-account mode only sees this
-runner's own resting orders and positions. Run directly:
+runner's own positions. Run directly:
 
     python test_ledger_wiring.py
 """
@@ -23,7 +23,6 @@ from kalshi_btc_markets import ActiveMarket
 from order_manager import OrderManager, OrderRefused
 from tagged_ledger import TaggedLedger, split_client_order_id
 
-config.ENABLE_TRAILING_EXIT = False
 _tmp = Path(tempfile.mkdtemp())
 
 
@@ -56,14 +55,14 @@ def _signal(market, trade_price=0.87, favored_probability=0.95):
     )
 
 
-# 1. Orders are tagged, and a resting take-profit's later fill is booked.
+# 1. Orders are tagged, and a resting order's later fill is booked.
 kalshi = FakeKalshi(100.0)
 manager = _manager(kalshi, "s1")
 manager.buy_favored_side("T1", "yes", 3, 0.60)
 order = next(iter(kalshi.orders.values()))
 assert split_client_order_id(order["client_order_id"]) == ("bip", "yes"), order["client_order_id"]
 kalshi.next_fill = 0
-manager.buy_favored_side("T1", "no", 3, 0.25)  # resting take-profit: sells the held YES at 0.75
+manager.buy_favored_side("T1", "no", 3, 0.25)  # rests: sells the held YES at 0.75
 tp = [o for o in kalshi.orders.values() if o["status"] == "resting"][0]["order_id"]
 kalshi.fill_resting(tp, 3)
 manager.ledger.sync()
@@ -94,17 +93,15 @@ config.MAX_CONTRACTS_PER_TRADE = config_max
 assert open_positions == {}, open_positions
 print("PASS  refused_entry_not_registered")
 
-# 4. Shared-account mode: only this runner's resting orders and positions.
+# 4. Shared-account mode: only this runner's positions.
 kalshi = FakeKalshi(100.0)
 kalshi.next_fill = 0
 kalshi.place_order("T4", "bid", "2.00", "0.5000", client_order_id="ra-y-" + "0" * 28)  # another runner's
 manager = _manager(kalshi, "s4", size_from_sim=True, shared_account=True, allocation_dollars=20.0)
 kalshi.next_fill = 1
 manager.buy_favored_side("T4", "yes", 2, 0.40)
-resting = manager.get_resting_orders("T4")
-assert [split_client_order_id(o["client_order_id"])[0] for o in resting] == ["bip"], resting
 positions = manager.get_positions()["market_positions"]
 assert positions == [{"ticker": "T4", "position_fp": 1.0, "total_traded_dollars": 0.0}], positions
-print("PASS  shared_mode_sees_only_own_orders_and_positions")
+print("PASS  shared_mode_sees_only_own_positions")
 
 print("\nall scenarios passed")

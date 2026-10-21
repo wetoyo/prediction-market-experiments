@@ -32,7 +32,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from derbit.fetch_historical import get_book_summary_by_currency, get_index_price, get_instruments  # noqa: E402
 
-from black_scholes import prob_forward_above_strike, prob_forward_below_strike  # noqa: E402
+from black_scholes import digital_above_delta, prob_forward_above_strike, prob_forward_below_strike  # noqa: E402
 
 SECONDS_PER_YEAR = 365.0 * 86400.0
 
@@ -195,6 +195,22 @@ def estimate_probability(
         years_to_expiry=years_to_expiry,
         extrapolated=extrapolated,
     )
+
+
+def estimate_delta_yes(surface: Surface, *, direction: str, strike: float, seconds_to_expiry: float) -> float:
+    """BTC exposure of one YES contract ($1 payout): dollars it gains per $1
+    rise in BTC, from the same interpolated sigma/forward estimate_probability
+    uses. Positive for "above", negative for "below". A NO contract is the
+    negative of this.
+    """
+    years_to_expiry = max(seconds_to_expiry, 0.0) / SECONDS_PER_YEAR
+    sigma, forward, _ = _iv_and_forward_at(surface, strike, years_to_expiry)
+    delta = digital_above_delta(forward, strike, sigma, years_to_expiry)
+    if direction == "above":
+        return delta
+    if direction == "below":
+        return -delta
+    raise ValueError(f"unknown direction {direction!r}, expected 'above' or 'below'")
 
 
 if __name__ == "__main__":

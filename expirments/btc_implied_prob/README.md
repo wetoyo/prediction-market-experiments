@@ -66,47 +66,34 @@ implied fraction blows toward the entire bankroll off a modest edge) --
 `KELLY_FRACTION` defaults conservative here pending the same kind of live
 validation.
 
-**7. Exit** (`strategy.py`'s `_check_exit_conditions`): off by default
-(`ENABLE_TRAILING_EXIT`) -- until 2026-08-13 this strategy was buy-only, no
-exit logic at all, every position rode to settlement. When enabled, each
-open position is re-checked every tick against a fresh Deribit-implied
-probability and the market's current quote, and exits (buys the opposite
-side to flatten) once either the edge that justified entering has closed to
-`EXIT_EDGE_THRESHOLD` or below (take-profit) or price has given back
-`TRAILING_STOP_DROP` from its best point since entry (trailing stop, also a
-plain stop-loss on a position that never improves) -- trailing-stop has its
-own toggle, `ENABLE_TRAILING_STOP`, off by default, independent of
-`ENABLE_TRAILING_EXIT`: with it off, take-profit is the only exit path, and a
-position that drifts against the entry edge without ever clearing
-`EXIT_EDGE_THRESHOLD` just rides to settlement. **Exiting costs a second
-fee** on top of the entry fee -- Kalshi's quadratic fee applies per trade,
-not per position, so a completed round trip roughly doubles fee drag versus
-holding to settlement; `EXIT_EDGE_THRESHOLD` defaults positive (not 0.0)
-specifically to bank real profit net of that.
+**7. Hedge** (`hedger.py`, added 2026-10-21): every position rides to
+settlement -- the take-profit/trailing-stop exits that used to live here are
+gone. Instead, each tick the open positions' combined BTC delta (dollars
+gained per $1 BTC move: the Black-76 digital delta `n(d2) / (F * sigma *
+sqrt(T))` per contract, from the same Deribit sigma/forward the entry was
+priced off, negative for "below" and for NO) is offset with Kalshi's BTC
+perpetual, `KXBTCPERP` (0.0001 BTC per contract, settles off BRTI like the
+binaries). The perp is traded with IOC limits `HEDGE_MAX_SLIPPAGE` through
+the top of book whenever the target moves at least `HEDGE_REBALANCE_CONTRACTS`
+from what's held, capped at `HEDGE_MAX_CONTRACTS` either way. Positions within
+`HEDGE_STOP_SECONDS_BEFORE_CLOSE` of close drop out of the hedge (a binary's
+delta blows up near the strike at expiry and can't be chased once a tick),
+and with nothing open the hedge goes flat. Live, the held perp position is
+read back from `/margin/positions` every tick; dry-run simulates it.
 
-Take-profit itself is handled differently live vs. dry-run, added
-2026-08-15: dry-run has no real order book, so it keeps a simple tick-driven
-simulated check. Live instead places an actual resting limit order on the
-exit side at the take-profit target the moment a position is entered, and
-repriced (canceled and replaced) each tick as the target drifts with time
-decay and the IV surface moving -- Kalshi's own matching engine then fills it
-the instant price actually crosses, rather than waiting up to a full loop
-tick (60s by default) for this process to notice and place a marketable
-order. Trailing-stop stays tick-driven either way, since its trigger price
-moves with the position's own peak and would need the same per-tick
-repricing regardless. This also surfaced (and fixed) a real pricing bug: the
-tick-driven decision logic had been reading the wrong side of the spread
-(`yes_ask`/`1-yes_bid` instead of `yes_bid`/`1-yes_ask`) for what a held
-position could actually be sold for -- harmless for the old dry-run-only
-comparison, but would have meant the resting order's target price didn't
-match what the trigger logic thought it was targeting.
+The perp trades on Kalshi's margin exchange instance, which has its **own
+cash**: transfer funds over first
+(`KalshiTradingClient.transfer_between_instances("event_contract",
+"margined", dollars)`), or every hedge order is rejected. The per-runner
+ledger only tracks the event-contract side. Perp fees and funding aren't in
+the entry edge.
 
 **8. Position tracking** (`positions_store.py`): `open_positions` is tracked
-unconditionally -- not just when `ENABLE_TRAILING_EXIT` is on -- persisted to
+unconditionally, persisted to
 `POSITIONS_STATE_PATH` every tick, reloaded on startup, and reconciled
 against Kalshi's real account state once at the start of a `--execute` run.
-Added 2026-08-15 after a live incident: with tracking gated on the exit
-toggle, a running process (toggle off, the default) had no record of tickers
+Added 2026-08-15 after a live incident: with tracking gated on an exit
+toggle (since removed), a running process had no record of tickers
 it already held, so `_execute` re-bought the same qualifying tickers on every
 single loop tick -- ~750 contracts accumulated across 7 strikes in one event
 over ~80 minutes before anyone noticed. A ticker already in `open_positions`
@@ -132,8 +119,9 @@ python strategy.py --loop 30  # rescan every 30s until interrupted
 see that file for the full list: `EDGE_THRESHOLD`, `MIN_SECONDS_TO_CLOSE`,
 `MAX_SECONDS_TO_CLOSE`, `MAX_SPREAD`, `KELLY_FRACTION`,
 `MAX_CONTRACTS_PER_TRADE`, `DRY_RUN_SIMULATED_BALANCE_DOLLARS`, `DRY_RUN`,
-`ENABLE_TRAILING_EXIT`, `EXIT_EDGE_THRESHOLD`, `ENABLE_TRAILING_STOP`,
-`TRAILING_STOP_DROP`, `POSITIONS_STATE_PATH`).
+`ENABLE_PERP_HEDGE`, `PERP_HEDGE_TICKER`, `HEDGE_REBALANCE_CONTRACTS`,
+`HEDGE_MAX_CONTRACTS`, `HEDGE_STOP_SECONDS_BEFORE_CLOSE`, `HEDGE_MAX_SLIPPAGE`,
+`POSITIONS_STATE_PATH`).
 
 Each module also has a `__main__` smoke test:
 `python deribit_iv.py` prints the built vol surface and a sample probability;

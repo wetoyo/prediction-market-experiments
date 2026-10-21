@@ -33,3 +33,20 @@ def prob_forward_above_strike(forward: float, strike: float, sigma: float, years
 
 def prob_forward_below_strike(forward: float, strike: float, sigma: float, years_to_expiry: float) -> float:
     return 1.0 - prob_forward_above_strike(forward, strike, sigma, years_to_expiry)
+
+
+def _normal_pdf(z: float) -> float:
+    return math.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
+
+
+def digital_above_delta(forward: float, strike: float, sigma: float, years_to_expiry: float) -> float:
+    """dP(F_T > K)/dF: dollars a $1-payout "above" contract gains per $1 move
+    in the forward, i.e. its exposure in BTC. n(d2) / (F * sigma * sqrt(T)).
+    The "below" contract's delta is the negative of this. Zero with no time or
+    vol left (the step function's derivative, away from the strike itself).
+    """
+    if years_to_expiry <= 0 or sigma <= 0:
+        return 0.0
+    vol_sqrt_t = sigma * math.sqrt(years_to_expiry)
+    d2 = (math.log(forward / strike) - 0.5 * vol_sqrt_t * vol_sqrt_t) / vol_sqrt_t
+    return _normal_pdf(d2) / (forward * vol_sqrt_t)

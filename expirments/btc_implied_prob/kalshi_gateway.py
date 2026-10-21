@@ -29,6 +29,18 @@ def fetch_market(ticker: str) -> dict:
     return response.json()["market"]
 
 
+def fetch_margin_market(ticker: str) -> dict:
+    """A perps (margin) market, e.g. KXBTCPERP: contract_size, tick_size and
+    the live top-of-book `bid`/`ask`. Public endpoint, no auth needed. Uses
+    `bid`/`ask` from here rather than /orderbook, whose levels came back
+    best-last on 2026-10-21 despite the spec saying best-first.
+    """
+    response = requests.get(f"{BASE_URL}/margin/markets/{ticker}", timeout=20)
+    response.raise_for_status()
+    return response.json()["market"]
+
+
 __all__ = [
-    "fetch_series", "fetch_markets", "fetch_orderbook", "fetch_market", "fetch_trades", "KalshiTradingClient",
+    "fetch_series", "fetch_markets", "fetch_orderbook", "fetch_market", "fetch_margin_market", "fetch_trades",
+    "KalshiTradingClient",
 ]

@@ -89,66 +89,50 @@ DRY_RUN_SIMULATED_BALANCE_DOLLARS = _float_env("BTC_IMPLIED_PROB_DRY_RUN_BALANCE
 
 DERIBIT_CURRENCY = "BTC"
 
-# Take-profit + trailing-stop exit toggle, off by default. Added 2026-08-13
-# per explicit user request -- this strategy was buy-only until now (every
-# position rode to settlement, no exit logic at all; see strategy.py's
-# _check_exit_conditions for what turning this on adds). Off by default
-# because it's brand new and unvalidated, same conservative-until-proven
-# posture as KELLY_FRACTION starting low above.
+# --- Perp delta hedge (added 2026-10-21, replaces the take-profit/trailing-
+# stop exits) ---
 #
-# Important cost this doesn't happen for free: exiting early means TWO trades
-# instead of one (enter, then exit by buying the opposite side to flatten),
-# and Kalshi's 7% quadratic fee (see fees.py) applies to every trade, not
-# just entries -- so a completed round trip pays roughly double the fee drag
-# of just holding to settlement. EXIT_EDGE_THRESHOLD below defaults positive
-# (not 0.0) specifically to bank real profit net of that doubled cost, not
-# exit at a price that only just covers it.
-ENABLE_TRAILING_EXIT = _bool_env("BTC_IMPLIED_PROB_ENABLE_TRAILING_EXIT", True)
+# Every open binary position rides to settlement; its BTC exposure is
+# offset with Kalshi's BTC perpetual instead of being stopped out. Each tick
+# hedger.py sums the positions' deltas (dollars per $1 BTC move, from the same
+# Deribit sigma/forward the entry was priced off -- see deribit_iv.
+# estimate_delta_yes) and trades the perp toward the opposite exposure. The
+# perp trades on Kalshi's margin exchange instance, which has its own cash:
+# move funds over first (KalshiTradingClient.transfer_between_instances), or
+# every hedge order gets rejected. Dry-run simulates the hedge position.
+ENABLE_PERP_HEDGE = _bool_env("BTC_IMPLIED_PROB_ENABLE_PERP_HEDGE", True)
 
-# Take-profit threshold, in the same probability-minus-price "edge" units as
-# EDGE_THRESHOLD above. Once the current edge for the side actually held
-# (fresh Deribit-implied probability minus current market price) closes down
-# to this value or below, _check_exit_conditions attempts to sell. Not 0.0 --
-# see ENABLE_TRAILING_EXIT's docstring: the exit leg pays its own fee on top
-# of the entry fee already paid, so exiting at literal edge-breakeven would
-# still net a loss after that second fee. At this strategy's typical entry
-# prices (~0.85-0.97, given EDGE_THRESHOLD=0.03 and Deribit-implied
-# confidence), fee-per-contract runs roughly 0.004-0.009 one-way (0.07 *
-# price * (1-price)), so ~0.02 covers a round trip with room to spare; tune
-# via env var if live fills show otherwise. Only takes effect when
-# ENABLE_TRAILING_EXIT is true.
-EXIT_EDGE_THRESHOLD = _float_env("BTC_IMPLIED_PROB_EXIT_EDGE_THRESHOLD", 0.02)
+# KXBTCPERP is 0.0001 BTC per contract, whole contracts only (2026-10-21).
+# Settles off CF Benchmarks' BRTI, the same index the binaries settle on.
+PERP_HEDGE_TICKER = _str_env("BTC_IMPLIED_PROB_PERP_HEDGE_TICKER", "KXBTCPERP")
 
-# Trailing-stop toggle, off by default, independent of ENABLE_TRAILING_EXIT.
-# Added 2026-08-15: ENABLE_TRAILING_EXIT alone still turns on take-profit
-# (dry-run's simulated check, or live's resting order -- see strategy.py's
-# _check_exit_conditions/_maintain_take_profit_order); this additionally
-# gates whether the trailing-stop condition below can ever fire. Off by
-# default for the same conservative-until-proven posture as
-# ENABLE_TRAILING_EXIT itself -- take-profit alone (a resting order live) is
-# the better-understood, lower-latency piece; trailing-stop is still
-# tick-driven (see TRAILING_STOP_DROP's docstring for why a resting order
-# doesn't help there) and hasn't been live-validated at all yet.
-ENABLE_TRAILING_STOP = _bool_env("BTC_IMPLIED_PROB_ENABLE_TRAILING_STOP", False)
+# Only rebalance when the target differs from the held perp position by at
+# least this many contracts, so the hedge isn't churned (and charged fees) on
+# every small move in delta. Going flat (target 0) always trades.
+HEDGE_REBALANCE_CONTRACTS = _float_env("BTC_IMPLIED_PROB_HEDGE_REBALANCE_CONTRACTS", 2.0)
 
-# Trailing stop-loss, same units as EXIT_EDGE_THRESHOLD. Tracks the best
-# (highest) market price seen for the held side since entry and exits if
-# price has given back this many dollars from that peak. Because the peak
-# starts at the entry price itself, this doubles as a plain stop-loss on a
-# position that never improves (an immediate adverse move of this size right
-# after entry exits right away) as well as a trailing lock-in on a position
-# that moved favorably and then reversed before the edge fully closed.
-# Independent of EXIT_EDGE_THRESHOLD -- either condition triggers an exit on
-# its own. Only takes effect when both ENABLE_TRAILING_EXIT and
-# ENABLE_TRAILING_STOP are true.
-TRAILING_STOP_DROP = _float_env("BTC_IMPLIED_PROB_TRAILING_STOP_DROP", 0.05)
+# Hard cap on the perp position either way, in contracts. A binary's delta
+# grows without bound near the strike as close approaches (n(d2)/(F*sigma*
+# sqrt(T))) -- 10 at-the-money hourly contracts already want ~90 perp
+# contracts (~$750 notional) -- so this bounds the margin the hedge can use.
+HEDGE_MAX_CONTRACTS = _float_env("BTC_IMPLIED_PROB_HEDGE_MAX_CONTRACTS", 100.0)
+
+# Positions closing sooner than this drop out of the hedge (their delta
+# counts as 0, so the hedge unwinds them). Inside the last stretch delta
+# swings too hard to chase once a tick, and inside the 60s settlement-
+# averaging window part of the payout is already fixed.
+HEDGE_STOP_SECONDS_BEFORE_CLOSE = _float_env("BTC_IMPLIED_PROB_HEDGE_STOP_SECONDS_BEFORE_CLOSE", 120.0)
+
+# Hedge orders are IOC limits this fraction through the top of book
+# (0.0005 = 5bp), so a fast market can't fill them at an arbitrary price.
+HEDGE_MAX_SLIPPAGE = _float_env("BTC_IMPLIED_PROB_HEDGE_MAX_SLIPPAGE", 0.0005)
 
 # Where strategy.py's open_positions dict is persisted between ticks (and
 # reloaded across restarts). Added 2026-08-15 after a live incident: with no
 # dedup check on the entry side, a running process re-bought the same
 # handful of tickers on every single loop tick for over an hour (open
-# positions were tracked only in memory, and only when ENABLE_TRAILING_EXIT
-# was on) before anyone noticed -- ~750 contracts accumulated across 7
+# positions were tracked only in memory, and only when the since-removed
+# exit toggle was on) before anyone noticed -- ~750 contracts accumulated across 7
 # strikes in one event, $4.31 in avoidable fees. open_positions is now always
 # tracked (regardless of the exit toggle) and always persisted here so a
 # restart doesn't forget what's already held. Relative path resolves against
@@ -161,7 +145,8 @@ POSITIONS_STATE_PATH = os.environ.get("BTC_IMPLIED_PROB_POSITIONS_STATE_PATH", "
 # trades KXBTC15M/KXBTCD/KXETH15M/KXETHD: Kalshi nets positions per account, so
 # two runners on one ticker can redeem each other's legs early, and this
 # strategy's resting take-profit orders can make resolution_alpha's IOC orders
-# cancel under self-trade prevention (../resolution_alpha/live/
+# cancel under self-trade prevention (those take-profits were removed
+# 2026-10-21) (../resolution_alpha/live/
 # SIM_BANKROLL_PLAN.md, Phase 3 items 3-4). Empty by default.
 EXCLUDE_SERIES = _tuple_env("BTC_IMPLIED_PROB_EXCLUDE_SERIES", ())
 

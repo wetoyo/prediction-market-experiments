@@ -60,6 +60,7 @@ class OrderManager:
     def __init__(self, dry_run: bool = DRY_RUN):
         self.dry_run = dry_run
         self._client = None
+        self._sim_perp_positions: dict[str, float] = {}  # dry-run only
         if not dry_run:
             self._client = KalshiTradingClient()
             if config.SIM_BANKROLL_ENABLED:
@@ -145,34 +146,6 @@ class OrderManager:
             return {"market_positions": self.ledger.own_market_positions(), "event_positions": []}
         return self._client.get_positions()
 
-    def get_resting_orders(self, ticker: str) -> list[dict]:
-        """Currently-resting (unfilled, not yet canceled) orders for a single
-        ticker, for maintaining a take-profit resting order (see strategy.py's
-        _maintain_take_profit_order). Confirmed live 2026-08-15 (place+list+
-        cancel of a real 1-contract order, priced to never fill): each entry
-        has `order_id`, `ticker`, `side` ("yes"/"no" -- this module's own
-        convention, not the api "bid"/"ask" translation _to_api_order does),
-        `remaining_count_fp`, `yes_price_dollars`/`no_price_dollars` (both
-        present regardless of side, complementary: no_price = 1-yes_price).
-        Cancel-to-listing has a couple seconds of lag -- don't assume a
-        just-canceled order is already absent from the very next call.
-        Empty in dry-run (no real orders to list). In shared-account mode,
-        only this runner's own (tagged) orders -- strategy.py cancels
-        whatever this returns.
-        """
-        if self.dry_run:
-            return []
-        orders = self._client.get_orders(status="resting", ticker=ticker).get("orders", [])
-        if self.ledger is not None and self.ledger.shared_account:
-            orders = [o for o in orders if self.ledger.is_own(o)]
-        return orders
-
-    def cancel_order(self, order_id: str) -> dict:
-        """No-op in dry-run. Live behavior confirmed 2026-08-15."""
-        if self.dry_run:
-            return {"dry_run": True}
-        return self._client.cancel_order(order_id)
-
     def buy_favored_side(self, ticker: str, side: str, contracts: float, limit_price: float) -> dict:
         """Places a marketable limit order on `side` ("yes"/"no") for
         `contracts` at `limit_price` (dollars, 0-1, quoted in that side's own
@@ -215,4 +188,37 @@ class OrderManager:
         if self.ledger is not None:
             # The limit actually sent, in `side`'s own terms (after the cent rounding).
             self.ledger.record_order(ticker, side, contracts, api_price if side == "yes" else 1.0 - api_price, response)
+        return response
+
+    def get_perp_position(self, ticker: str) -> float:
+        """Signed perp contracts held on the margin instance (positive = long).
+        Dry-run returns the position simulated by trade_perp. The margin
+        instance is this runner's alone (no other runner trades perps), so the
+        whole position is the hedge.
+        """
+        if self.dry_run:
+            return self._sim_perp_positions.get(ticker, 0.0)
+        positions = self._client.get_margin_positions(ticker=ticker).get("positions", [])
+        return sum(float(p["position"]) for p in positions if p.get("market_ticker") == ticker)
+
+    def trade_perp(self, ticker: str, contracts: int, limit_price: float) -> dict:
+        """IOC limit on the perp: buys `contracts` if positive, sells if
+        negative. Dry-run assumes a full fill at `limit_price`. Live, logs what
+        actually filled -- an unfilled remainder is just retried next tick.
+        """
+        api_side = "bid" if contracts > 0 else "ask"
+        action = "BUY" if contracts > 0 else "SELL"
+        count_str = f"{abs(contracts):.2f}"
+        price_str = f"{limit_price:.4f}"
+        if self.dry_run:
+            self._sim_perp_positions[ticker] = self._sim_perp_positions.get(ticker, 0.0) + contracts
+            logger.info("[DRY RUN] would %s %s %s @ %s (IOC)", action, count_str, ticker, price_str)
+            return {"dry_run": True, "fill_count": count_str}
+
+        logger.warning("LIVE HEDGE: %s %s %s @ %s (IOC)", action, count_str, ticker, price_str)
+        response = self._client.place_margin_order(ticker=ticker, side=api_side, count=count_str, price=price_str)
+        logger.warning(
+            "hedge fill: %s of %s %s @ avg %s (fee/contract %s)", response.get("fill_count"), count_str, ticker,
+            response.get("average_fill_price", "-"), response.get("average_fee_paid", "-"),
+        )
         return response
