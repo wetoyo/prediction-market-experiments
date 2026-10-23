@@ -15,7 +15,7 @@ is plenty.
 ## Running it
 
 ```
-cd expirments/golf_field_alpha/live
+cd experiments/golf_field_alpha/live
 pip install -r ../requirements.txt
 cp .env.example .env        # edit, then start_live loads it into the process
 ./start_live.sh             # or double-click start_live.bat on Windows

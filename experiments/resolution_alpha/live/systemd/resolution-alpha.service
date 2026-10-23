@@ -8,9 +8,9 @@ Before=resolution-alpha-killswitch.service
 [Service]
 Type=simple
 User=wetoyo
-WorkingDirectory=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha
-EnvironmentFile=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha/live/.env
-Environment=PYTHONPATH=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha
+WorkingDirectory=/home/wetoyo/prediction-market-experiments/experiments/resolution_alpha
+EnvironmentFile=/home/wetoyo/prediction-market-experiments/experiments/resolution_alpha/live/.env
+Environment=PYTHONPATH=/home/wetoyo/prediction-market-experiments/experiments/resolution_alpha
 ExecStart=/home/wetoyo/prediction-market-experiments/.venv/bin/python -u runner.py
 Restart=on-failure
 RestartSec=10

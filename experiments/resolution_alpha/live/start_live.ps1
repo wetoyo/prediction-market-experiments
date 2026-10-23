@@ -70,7 +70,7 @@ $logFile = "logs\live_$timestamp.log"
 $pythonExe = Join-Path $PSScriptRoot "..\..\..\.venv\Scripts\python.exe"
 if (-not (Test-Path $pythonExe)) {
     Write-Host "venv python not found at $pythonExe"
-    Write-Host "Create it from the repo root:  python -m venv .venv  then  .venv\Scripts\python -m pip install -r expirments\resolution_alpha\requirements.txt"
+    Write-Host "Create it from the repo root:  python -m venv .venv  then  .venv\Scripts\python -m pip install -r experiments\resolution_alpha\requirements.txt"
     Read-Host "Press Enter to close this window"
     exit 1
 }

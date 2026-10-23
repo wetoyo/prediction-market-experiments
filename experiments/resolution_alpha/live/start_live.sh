@@ -12,7 +12,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 export PYTHONPATH="$(cd .. && pwd)"
 
 # Repo-root virtualenv (created once: `python3 -m venv .venv` at the repo
-# root, then `.venv/bin/pip install -r expirments/resolution_alpha/requirements.txt`).
+# root, then `.venv/bin/pip install -r experiments/resolution_alpha/requirements.txt`).
 # Three levels up from live/. Falls back to PATH python if it's not there.
 PYTHON="../../../.venv/bin/python"
 if [ ! -x "$PYTHON" ]; then

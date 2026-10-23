@@ -4,7 +4,7 @@
 # kills the live runner.py process if equity drops too far below it.
 #
 # Usage: RUNNER_PID=<pid> BASELINE_DOLLARS=100 THRESHOLD_PCT=-10 ./pnl_killswitch.sh
-# Run from expirments/resolution_alpha/live with .env already sourced.
+# Run from experiments/resolution_alpha/live with .env already sourced.
 #
 # v2 (2026-08-06): the first version used raw cash balance, which produced a
 # false trigger -- this strategy only enters positions in the last
