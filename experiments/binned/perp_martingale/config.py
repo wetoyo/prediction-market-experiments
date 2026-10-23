@@ -76,7 +76,7 @@ COST_ESTIMATE = _float_env("PERP_MARTINGALE_COST_ESTIMATE", 2 * 0.0005 + 0.0002)
 LEVERAGE = _float_env("PERP_MARTINGALE_LEVERAGE", 6.0)
 
 # Profit skim: this share of each won cycle's profit leaves the working
-# bankroll (into a reserve, like ../shared/profit_skim.py), so sizing never
+# bankroll (into a reserve, like ../../shared/profit_skim.py), so sizing never
 # compounds on it.
 SKIM_FRACTION = _float_env("PERP_MARTINGALE_SKIM_FRACTION", 1.0)
 

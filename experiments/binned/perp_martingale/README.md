@@ -1,4 +1,4 @@
-# perp_martingale
+# perp_martingale (binned 2026-10-23)
 
 **Question:** can a martingale make money if each bet's direction comes
 from technical indicators on Kalshi's BTC perpetual (`KXBTCPERP`), the
@@ -132,7 +132,7 @@ gives back 11-21% of the bankroll.
 - Fee tiers and maker rebates. The account's real rate is at
   `/margin/fee_tiers` and needs auth.
 - The margin-instance cash transfers a live runner would need. See
-  `../btc_implied_prob/hedger.py`, which already implements them.
+  `../../btc_implied_prob/hedger.py`, which already implements them.
 
 ## KXBTC15M with the perp signal
 
@@ -201,5 +201,5 @@ clearly above breakeven, over hundreds of bets, on both train and test.
 Add it to `indicators.directions` and re-run. Kelly will start funding
 cycles on its own once the walk-forward estimate clears breakeven. The perp
 history is only 4.5 months, so a candidate like the `*_fade @ 5m` rows
-above is better tested by logging it forward (`../loggers`) than by
+above is better tested by logging it forward (`../../loggers`) than by
 mining this window further.

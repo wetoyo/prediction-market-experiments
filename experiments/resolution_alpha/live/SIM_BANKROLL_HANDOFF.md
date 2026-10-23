@@ -31,7 +31,7 @@ The 09-26 items below are done. The multi-runner decisions are still pending.
    ```
    ssh wetoyo@100.109.148.56
    journalctl -u resolution-alpha.service --since '2026-09-26 14:37' --no-pager | grep -v 'eval summary' | grep -E 'LIVE ORDER|entry filled|0 filled|HTTPError|invalid|400|ERROR|Traceback'
-   cd ~/prediction-market-experiments/expirments/resolution_alpha && ../../.venv/bin/python inspect_order_records.py   # expect 'ra-<y|n>-<hex>' shapes
+   cd ~/prediction-market-experiments/experiments/resolution_alpha && ../../.venv/bin/python inspect_order_records.py   # expect 'ra-<y|n>-<hex>' shapes
    ```
 
    Fills and no 400s mean it's accepted: add a results-log row. A 400 / `invalid` means rejected, so
@@ -40,7 +40,7 @@ The 09-26 items below are done. The multi-runner decisions are still pending.
 2. **Ledger health**, same as before: `live/logs/sim_bankroll.json` shows `divergence_count` 0 and
    `last_check.status` `ok`, and there's no divergences jsonl.
 3. **The other two experiments can now share the account (code only, nothing running).** On
-   2026-09-26 afternoon `sim_bankroll.py` moved to `expirments/shared/`, and btc_implied_prob and
+   2026-09-26 afternoon `sim_bankroll.py` moved to `experiments/shared/`, and btc_implied_prob and
    golf_field_alpha got the same ledger through `shared/tagged_ledger.py`. See the plan's "Running
    the other two experiments beside resolution_alpha": what's built, config, go-live steps, hazards.
    Owner decisions pending before any of it runs live:
@@ -130,7 +130,7 @@ The owner said they'd run the next session with `--dangerously-skip-permissions`
 
 ```
 ssh wetoyo@100.109.148.56
-cd ~/prediction-market-experiments/expirments/resolution_alpha
+cd ~/prediction-market-experiments/experiments/resolution_alpha
 # 1. Did orders since the 01:24 restart go through? Look for LIVE ORDER followed by "entry filled", and no 400s.
 journalctl -u resolution-alpha.service --since '2026-09-26 01:24' | grep -E 'LIVE ORDER|entry filled|HTTPError|400|ERROR'
 # 2. Field check: prints field names, counts and client_order_id shapes only (no balances or credentials)
@@ -255,7 +255,7 @@ trading, `release` it.
 
 ## Where everything is
 
-| What | Where (under `expirments/resolution_alpha/`) |
+| What | Where (under `experiments/resolution_alpha/`) |
 |---|---|
 | Ledger logic (pure, no network) | `../shared/sim_bankroll.py` (moved 2026-09-26): `SimulatedBankroll` (`record_fill`, `apply_exact_cost`, `apply_settlement`, `check`, `sizing_cash`, `resume`, `_book_order_record`, `snapshot`) |
 | Wiring | `order_manager.py`: `buy_favored_side` (tagging + `record_fill`), `get_balance_dollars` (sizing), `sync_sim_bankroll` / `_initialize_sim` (resume, recovery, fail-closed guard), `_status_file_taken` |
@@ -263,7 +263,7 @@ trading, `release` it.
 | Account reconciler | `account_reconciler.py`: pure `AccountReconciler.check` + `attribute`; CLI loop |
 | Payload check | `inspect_order_records.py` (read-only) |
 | Config | `config.py`: `SIM_BANKROLL_*`, `SIZE_FROM_SIM_BANKROLL`, `ORDER_TAG`, `SIM_BANKROLL_SHARED_ACCOUNT`, `SIM_BANKROLL_ALLOW_FRESH_ALLOCATION`. Every env var is prefixed `RESOLUTION_ALPHA_`. |
-| Tests | `tests/test_sim_bankroll.py`, `tests/test_account_reconciler.py`. **105 tests** in the full suite; all pass locally and on the Pi. Run `python -m pytest tests -q` from `expirments/resolution_alpha`. |
+| Tests | `tests/test_sim_bankroll.py`, `tests/test_account_reconciler.py`. **105 tests** in the full suite; all pass locally and on the Pi. Run `python -m pytest tests -q` from `experiments/resolution_alpha`. |
 | Pi | `wetoyo@100.109.148.56`, repo at `~/prediction-market-experiments`, venv at `.venv` |
 
 ## Phase 1 (done): what it tested
@@ -278,7 +278,7 @@ The sections below still apply to reading the live ledger under Phase 2.
 
 ## How to read the results
 
-All results are on the Pi, under `~/prediction-market-experiments/expirments/resolution_alpha/live/logs/`.
+All results are on the Pi, under `~/prediction-market-experiments/experiments/resolution_alpha/live/logs/`.
 
 ```
 # Current state + running tally (rewritten every ~15s)
@@ -333,7 +333,7 @@ fix the ledger rule, add a test, redeploy, and **restart the clock**.
 
 1. Look at the event in the `.jsonl`: `gap`, `sim_cash`, `real_balance`, `open_positions`, and `ts`.
 2. Match `ts` against the journal, and against Kalshi fills and settlements around that time. The
-   read-only script `expirments/resolution_alpha/reconstruct_trade_history.py` pulls both.
+   read-only script `experiments/resolution_alpha/reconstruct_trade_history.py` pulls both.
 3. Common explanations:
    - **Outside cause:** a deposit, a withdrawal, or a manual trade on kalshi.com. The gap equals that
      amount. This isn't a ledger bug; write it down in the results log below.
@@ -383,8 +383,8 @@ purpose: added latency before an order caused the 2026-09-04 zero-fill incident 
 - **Disable the ledger entirely:** add `RESOLUTION_ALPHA_SIM_BANKROLL_ENABLED=false` to `live/.env`,
   then restart the service.
 - **Full code rollback:** back up the files, then
-  `git checkout 5670109 -- expirments/resolution_alpha` on the Pi. File backups from the deploy are at
-  `expirments/resolution_alpha/*.bak.20260922_224920_simbankroll`.
+  `git checkout 5670109 -- experiments/resolution_alpha` on the Pi. File backups from the deploy are at
+  `experiments/resolution_alpha/*.bak.20260922_224920_simbankroll`.
 - With `SIZE_FROM_SIM_BANKROLL` on, the ledger **does** drive sizing, capped at the real balance.
   Every other path only observes.
 

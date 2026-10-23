@@ -1,4 +1,4 @@
-# expirments
+# experiments
 
 Live/paper Kalshi trading strategies. Each subdirectory is a standalone
 experiment (own `config.py`, `strategy.py`/`runner.py`, `README.md`):
@@ -6,11 +6,14 @@ experiment (own `config.py`, `strategy.py`/`runner.py`, `README.md`):
 - `resolution_alpha/` -- crypto interval-market resolution-window strategy.
 - `btc_implied_prob/` -- BTC/ETH interval markets priced off Deribit implied vol.
 - `golf_field_alpha/` -- golf tournament outright-winner field de-vig.
-- `perp_martingale/` -- martingale with Kelly-sized cycles, direction from
-  indicators on KXBTCPERP, on the perp and on KXBTC15M. Backtest only (no
-  edge found, no live runner).
 
-The live three authenticate against the **same Kalshi account**
+Shelved trades (backtested, not worth running) live in `binned/`, each with
+its findings. See `binned/README.md`.
+
+The folder was called `expirments/` until 2026-10-23. To move a Pi checkout
+across, see `resolution_alpha/live/systemd/README.md`.
+
+All three authenticate against the **same Kalshi account**
 (`KALSHI_API_KEY_ID` / `KALSHI_PRIVATE_KEY_PATH`). They share it through a
 per-runner ledger: each runner's `OrderManager` keeps its own slice of the
 balance (cash, positions, fills, settlements), tags its orders

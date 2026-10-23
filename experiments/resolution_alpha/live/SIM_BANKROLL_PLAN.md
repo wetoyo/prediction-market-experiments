@@ -87,7 +87,7 @@ This phase only works while this runner is the only thing trading the account.
 Handy checks on the Pi:
 
 ```
-cat expirments/resolution_alpha/live/logs/sim_bankroll.json
+cat experiments/resolution_alpha/live/logs/sim_bankroll.json
 journalctl -u resolution-alpha.service | grep sim-bankroll
 ```
 
@@ -193,7 +193,7 @@ change is the order tag in `client_order_id`.
 
   ```
   [Service]
-  WorkingDirectory=/home/wetoyo/prediction-market-experiments/expirments/resolution_alpha
+  WorkingDirectory=/home/wetoyo/prediction-market-experiments/experiments/resolution_alpha
   ExecStart=/home/wetoyo/prediction-market-experiments/.venv/bin/python -u account_reconciler.py --interval 30
   Restart=on-failure
   ```
@@ -255,7 +255,7 @@ change is the order tag in `client_order_id`.
 
 ### What's built
 
-- **`expirments/shared/`** is the home of the ledger now. `sim_bankroll.py` moved there from
+- **`experiments/shared/`** is the home of the ledger now. `sim_bankroll.py` moved there from
   `resolution_alpha/` (each `order_manager.py` puts `../shared` on `sys.path`, so the import line
   didn't change). Two additions, both no-ops for resolution_alpha:
   - `book_fill(ticker, side, count, cost, order_id, opened_ts)`: books an exact fill, or the newly
@@ -314,7 +314,7 @@ change is the order tag in `client_order_id`.
     ($1000) whatever the account held, because `scan()` never passed a bankroll to `plan_basket`.
     Only `MAX_EVENT_COST_DOLLARS` ($40) bounded them. Live runs now pass the real (or ledger)
     balance, and skip the tick if it can't be read.
-- **Tests.** `python -m pytest shared/tests resolution_alpha/tests` from `expirments/`: 28 new plus
+- **Tests.** `python -m pytest shared/tests resolution_alpha/tests` from `experiments/`: 28 new plus
   105 existing. `python test_ledger_wiring.py` in each of `btc_implied_prob/` and
   `golf_field_alpha/`. They run against `shared/tests/fake_kalshi.py`, a fake account that fills
   GTC orders partly, rests the remainder, fills it later, cancels, holds, pairs and settles. One
@@ -411,7 +411,7 @@ uncommitted. Moving its checkout is a disk-only change and needs no restart:
 cd ~/prediction-market-experiments
 git status && git -C prediction_market_scraper status --short   # expect only the keep-alive M
 git fetch origin && git -C prediction_market_scraper fetch origin
-git diff --stat HEAD origin/main -- expirments                    # expect docs + reconstruct script only
+git diff --stat HEAD origin/main -- experiments                    # expect docs + reconstruct script only
 git -C prediction_market_scraper diff bb616f4 -- Clients/Kalshi/fetch_historical.py   # expect empty
 git -C prediction_market_scraper checkout -- Clients/Kalshi/fetch_historical.py
 git checkout main && git merge --ff-only origin/main && git submodule update --init

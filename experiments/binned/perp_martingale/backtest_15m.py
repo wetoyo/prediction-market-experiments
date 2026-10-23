@@ -45,7 +45,7 @@ import data
 import martingale as mg
 
 SERIES = "KXBTC15M"
-FEE_RATE = 0.07  # Kalshi's quadratic fee multiplier (see ../resolution_alpha/fees.py)
+FEE_RATE = 0.07  # Kalshi's quadratic fee multiplier (see ../../resolution_alpha/fees.py)
 
 
 def kalshi_fee(price: float, contracts: int) -> float:
