@@ -6,8 +6,10 @@ experiment (own `config.py`, `strategy.py`/`runner.py`, `README.md`):
 - `resolution_alpha/` -- crypto interval-market resolution-window strategy.
 - `btc_implied_prob/` -- BTC/ETH interval markets priced off Deribit implied vol.
 - `golf_field_alpha/` -- golf tournament outright-winner field de-vig.
+- `perp_martingale/` -- martingale on KXBTCPERP with MACD/RSI direction and
+  Kelly-sized cycles. Backtest only (no edge found, no live runner).
 
-All three authenticate against the **same Kalshi account**
+The live three authenticate against the **same Kalshi account**
 (`KALSHI_API_KEY_ID` / `KALSHI_PRIVATE_KEY_PATH`). They share it through a
 per-runner ledger: each runner's `OrderManager` keeps its own slice of the
 balance (cash, positions, fills, settlements), tags its orders

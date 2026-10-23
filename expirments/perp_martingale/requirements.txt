@@ -1,0 +1,2 @@
+# requests: Kalshi public REST (KXBTCPERP candles + funding history).
+requests
