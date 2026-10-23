@@ -128,3 +128,13 @@ def test_simulate_15m_ladder_recovers_and_skims():
     assert r.bets == 3 and r.bet_wins == 1
     assert r.cycles == 1 and r.cycle_wins == 1 and r.steps_hist == {"2": 1}
     assert r.reserve > 0 and r.bankroll == pytest.approx(1000.0, abs=2.0)
+
+
+def test_edge_estimator_shrinks_toward_price_not_half():
+    e = mg.EdgeEstimator(prior=200, window=0)
+    for _ in range(100):
+        e.add(False, 0.30)  # 30c contracts that all lose... (1/4 win below)
+    for _ in range(25):
+        e.add(True, 0.30)
+    # hit 20% at a 30% cost: p must come out below the cost, not pulled up toward 0.5
+    assert e.p < 0.30

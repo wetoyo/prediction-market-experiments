@@ -132,6 +132,36 @@ def plan_cycle(bankroll: float, p: float, bracket: float, cost: float, depth: in
                      risk_fraction=n0 * r / bankroll if bankroll > 0 else 0.0)
 
 
+class EdgeEstimator:
+    """Walk-forward win rate for bets at varying prices (binary contracts):
+    the no-edge win rate of a bet is its cost (price + fee), so this shrinks
+    the *excess* win rate (won - cost) toward 0 instead of the win rate
+    toward 0.5, and reports p = mean cost + shrunk excess over the last
+    `window` bets."""
+
+    def __init__(self, prior: float, window: int = 0):
+        self.prior = prior
+        self.window = window
+        self.rows: list[tuple[float, float]] = []  # (won - cost, cost)
+
+    def add(self, won: bool, cost: float):
+        self.rows.append(((1.0 if won else 0.0) - cost, cost))
+        if self.window and len(self.rows) > self.window:
+            del self.rows[0]
+
+    @property
+    def cost(self) -> float:
+        return sum(c for _, c in self.rows) / len(self.rows) if self.rows else 0.53
+
+    @property
+    def excess(self) -> float:
+        return sum(e for e, _ in self.rows) / (len(self.rows) + self.prior)
+
+    @property
+    def p(self) -> float:
+        return self.cost + self.excess
+
+
 class WinRateEstimator:
     """Walk-forward per-bet win rate: the last `window` resolved bets, shrunk
     toward 0.5 with `prior` pseudo-bets."""

@@ -16,9 +16,10 @@ market and the cycle carries on with the next one.
 Sizing is martingale.py's `_w` form: a contract bought at a with fee f risks
 a + f and wins 1 - a - f, so w = (1 - a - f) / (a + f), and the next stake
 after a loss is (G + losses) / w at the actual price. The cycle is planned
-(and Kelly-sized) with w from the mean entry cost of recent bets; p is the
-same walk-forward win-rate estimate as backtest.py. Breakeven per bet is a
-win rate of a + f (about 0.52-0.53 near even money).
+(and Kelly-sized) with w from the mean entry cost of recent bets, and p =
+that cost + the walk-forward excess win rate (martingale.EdgeEstimator:
+shrunk toward no edge, which for a binary means toward its price, not 0.5).
+Breakeven per bet is a win rate of a + f (about 0.51-0.53 near even money).
 
 Not modeled: book depth at the ask (fills of any size at the quoted ask;
 these markets trade millions of contracts a day, but a ladder's deepest bet
@@ -34,7 +35,6 @@ import bisect
 import itertools
 import json
 import math
-import statistics
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -84,6 +84,9 @@ class Result:
     edge_sum: float = 0.0  # sum over bets of (outcome - price - fee per contract)
     cost_sum: float = 0.0  # sum of price + fee per contract
     funded_bets: int = 0
+    funded_wins: int = 0
+    funded_edge_sum: float = 0.0  # per-contract edge, funded bets only
+    funded_pnl: float = 0.0
     cycles: int = 0
     cycle_wins: int = 0
     busts: int = 0
@@ -109,8 +112,7 @@ class Result:
 def simulate(markets, mcandles, perp, funding, p: Params, trade_from: float, trade_to: float, dirs=None) -> Result:
     res = Result(params=asdict(p))
     bar_ends, bar_dirs = dirs or bt.bar_directions(perp, funding, p.signal, p.bar_minutes)
-    est = mg.WinRateEstimator(p.p_prior, p.p_window)
-    costs: list[float] = []  # recent entry cost per contract, for the planning w
+    est = mg.EdgeEstimator(p.p_prior, p.p_window)
     bankroll, reserve = p.bankroll, 0.0
     peak, max_dd = bankroll, 0.0
     cycle = None
@@ -135,7 +137,7 @@ def simulate(markets, mcandles, perp, funding, p: Params, trade_from: float, tra
         trading = m["open_ts"] >= trade_from
 
         if cycle is None and trading and bankroll > 0:
-            c0 = statistics.fmean(costs[-200:]) if costs else 0.53
+            c0 = est.cost
             plan = mg.plan_cycle_w(bankroll, est.p, (1 - c0) / c0, p.depth, p.sizing, p.kelly_fraction,
                                    p.max_cycle_risk)
             if plan.n0 > 0:
@@ -153,8 +155,7 @@ def simulate(markets, mcandles, perp, funding, p: Params, trade_from: float, tra
         fee = kalshi_fee(price, contracts)
         pnl = contracts * ((1.0 if won else 0.0) - price) - fee
         bankroll += pnl
-        est.add(won)
-        costs.append(price + fee1)
+        est.add(won, price + fee1)
         if trading:
             res.bets += 1
             res.bet_wins += won
@@ -163,6 +164,9 @@ def simulate(markets, mcandles, perp, funding, p: Params, trade_from: float, tra
             res.fees += fee
             if contracts:
                 res.funded_bets += 1
+                res.funded_wins += won
+                res.funded_edge_sum += (1.0 if won else 0.0) - price - fee1
+                res.funded_pnl += pnl
                 res.max_contracts = max(res.max_contracts, contracts)
         if cycle is not None:
             cycle["pnl"] += pnl
