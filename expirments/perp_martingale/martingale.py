@@ -1,6 +1,11 @@
 """Martingale ladder sizing with a Kelly-sized cycle. Pure, no network.
 
-A cycle is a run of bracket bets (win +b, lose -b of notional, minus costs c).
+In general terms (the `_w` functions): a bet risks r and wins w * r. A
+binary contract bought at price a (plus fee f per contract) has
+w = (1 - a - f) / (a + f); a perp bracket has w = (b - c) / (b + c). After
+each loss the next risk is (G + losses) / w, a growth of (1 + w) / w per step.
+
+For the perp: a cycle is a run of bracket bets (win +b, lose -b of notional, minus costs c).
 After each loss the next stake is sized so that winning it recovers every
 loss so far plus the cycle's base profit G = n0 * (b - c); in the plan that's
 a growth factor of 2b / (b - c) per step (just over 2x once costs count).
@@ -50,16 +55,55 @@ def cycle_win_prob(p: float, depth: int) -> float:
     return 1.0 - (1.0 - p) ** (depth + 1)
 
 
+def bracket_w(bracket: float, cost: float) -> float:
+    return (bracket - cost) / (bracket + cost)
+
+
 def kelly_cycle(p: float, bracket: float, cost: float, depth: int) -> float:
-    g, r, _ = cycle_shape(bracket, cost, depth)
-    pc = cycle_win_prob(p, depth)
-    return pc - (1.0 - pc) * r / g
+    return kelly_cycle_w(p, bracket_w(bracket, cost), depth)
 
 
 def kelly_single(p: float, bracket: float, cost: float) -> float:
     """Kelly fraction of the bankroll at risk on one bracket bet (no ladder)."""
-    win, loss = bracket - cost, bracket + cost
-    return p - (1.0 - p) * loss / win
+    return kelly_single_w(p, bracket_w(bracket, cost))
+
+
+def ladder_growth(w: float) -> float:
+    return (1.0 + w) / w
+
+
+def cycle_shape_w(w: float, depth: int) -> tuple[float, float]:
+    """(G, R) per $1 of first-bet risk."""
+    g = ladder_growth(w)
+    return w, sum(g ** k for k in range(depth + 1))
+
+
+def kelly_cycle_w(p: float, w: float, depth: int) -> float:
+    g, r = cycle_shape_w(w, depth)
+    pc = cycle_win_prob(p, depth)
+    return pc - (1.0 - pc) * r / g
+
+
+def kelly_single_w(p: float, w: float) -> float:
+    return p - (1.0 - p) / w
+
+
+def plan_cycle_w(bankroll: float, p: float, w: float, depth: int, sizing: str, kelly_fraction: float,
+                 max_cycle_risk: float) -> CyclePlan:
+    """Size a cycle of fully-funded bets (no margin: the ladder's total risk
+    is cash). n0 is the first bet's risk in dollars; 0 = don't fund."""
+    if w <= 0:
+        return CyclePlan(0.0, 0.0, 0.0, cycle_win_prob(p, depth), -1.0, 0.0)
+    if sizing == "flat":
+        depth = 0
+        k = kelly_single_w(p, w)
+    else:
+        k = kelly_cycle_w(p, w, depth)
+    g, r = cycle_shape_w(w, depth)
+    frac = 1.0 if sizing == "full" else max(0.0, min(k * kelly_fraction, max_cycle_risk))
+    n0 = frac * bankroll / r
+    return CyclePlan(n0=n0, base_profit=n0 * g, risk=n0 * r, win_prob=cycle_win_prob(p, depth), kelly=k,
+                     risk_fraction=frac)
 
 
 def plan_cycle(bankroll: float, p: float, bracket: float, cost: float, depth: int, sizing: str,

@@ -108,9 +108,9 @@ class Result:
         return self.bet_wins / self.bets if self.bets else float("nan")
 
 
-def bar_directions(candles, p: Params) -> tuple[list[float], list[int]]:
+def bar_directions(candles, funding, signal: str, bar_minutes: int) -> tuple[list[float], list[int]]:
     """(bar end ts, direction) per closed signal bar, from mid closes."""
-    bar_s = p.bar_minutes * 60
+    bar_s = bar_minutes * 60
     ends, closes = [], []
     for c in candles:
         bid = math.ceil(c[TS] / bar_s)
@@ -120,14 +120,24 @@ def bar_directions(candles, p: Params) -> tuple[list[float], list[int]]:
         else:
             ends.append(bid * bar_s)
             closes.append(mid)
-    dirs = indicators.directions(closes, p.signal, config.MACD_FAST, config.MACD_SLOW, config.MACD_SIGNAL,
-                                 config.RSI_PERIOD, seed=p.bar_minutes)
+    f_ts = [f[0] for f in funding]
+    rates = []
+    for e in ends:  # the latest funding rate published by each bar's end
+        j = bisect.bisect_right(f_ts, e) - 1
+        rates.append(funding[j][1] if j >= 0 else None)
+    dirs = indicators.directions(closes, signal, config.MACD_FAST, config.MACD_SLOW, config.MACD_SIGNAL,
+                                 config.RSI_PERIOD, seed=bar_minutes, funding=rates)
     return ends, dirs
+
+
+def sweep_signals() -> list[str]:
+    base = [s for s in indicators.SIGNALS if s not in ("always_long", "random")]
+    return base + [s + "_fade" for s in base] + ["always_long", "random"]
 
 
 def simulate(candles, funding, p: Params, trade_from: float, trade_to: float) -> Result:
     res = Result(params=asdict(p), start=trade_from, end=trade_to)
-    bar_ends, bar_dirs = bar_directions(candles, p)
+    bar_ends, bar_dirs = bar_directions(candles, funding, p.signal, p.bar_minutes)
     f_ts = [f[0] for f in funding]
     est = mg.WinRateEstimator(p.p_prior, p.p_window)
     bankroll, reserve = p.bankroll, 0.0
@@ -277,7 +287,7 @@ def _run(args):
 
 def fmt(r: Result) -> str:
     q = r.params
-    return (f"{q['signal']:>13} {q['bar_minutes']:>3}m b={q['bracket']*100:.2f}% d={q['depth']} {q['sizing']:>5} "
+    return (f"{q['signal']:>20} {q['bar_minutes']:>3}m b={q['bracket']*100:.2f}% d={q['depth']} {q['sizing']:>5} "
             f"fee={q['fee_rate']*1e4:.0f}bp | ret {r.return_pct:+7.1f}% (res ${r.reserve:8.2f}, bank ${r.bankroll:8.2f}) "
             f"dd {r.max_drawdown_pct:5.1f}% | hit {r.hit_rate:.3f} (BE {r.breakeven_p:.3f}, p^ {r.final_p:.3f}) "
             f"bets {r.bets} funded {r.funded_bets} | cyc {r.cycles} bust {r.busts} risk {r.mean_risk_fraction:.3f}")
@@ -310,7 +320,7 @@ def main():
 
     grid = []
     for sig, bar, br, sizing in itertools.product(
-            ("macd_rsi", "macd", "rsi", "macd_rsi_fade", "always_long", "random"), (5, 15, 60), (0.0025, 0.005, 0.01, 0.02),
+            sweep_signals(), (5, 15, 60), (0.005, 0.01, 0.02),
             ("kelly", "full", "flat")):
         for depth in ((0,) if sizing == "flat" else (3, 5, 7)):
             grid.append(Params(signal=sig, bar_minutes=bar, bracket=br, depth=depth, sizing=sizing))
@@ -325,13 +335,19 @@ def main():
         print(f"\n== train: Kelly-sized configs (kelly + flat): {len(funded)} of {len(kelly)} ever funded a bet ==")
         for r in sorted(funded, key=lambda r: r.total, reverse=True)[:args.top]:
             print(fmt(r))
+        # the bet sequence doesn't depend on sizing, so any run gives a signal's hit rate
         hits = {}
         for r in train:
             q = r.params
-            hits.setdefault((q["signal"], q["bar_minutes"], q["bracket"]), (r.hit_rate, r.breakeven_p, r.bets))
-        print("\n== train: raw per-bet hit rate by signal/bar/bracket (vs breakeven at the default fee) ==")
-        for k, (h, be, n) in sorted(hits.items(), key=lambda kv: kv[1][0] - kv[1][1], reverse=True):
-            print(f"{k[0]:>13} {k[1]:>3}m b={k[2]*100:.2f}%  hit {h:.3f}  BE {be:.3f}  edge {h-be:+.3f}  n={n}")
+            hits.setdefault((q["signal"], q["bar_minutes"], q["bracket"]), r)
+        best = sorted(hits.items(), key=lambda kv: kv[1].hit_rate - kv[1].breakeven_p, reverse=True)[:30]
+        oos = list(ex.map(_run, [(Params(**{**r.params}), split, t1) for _, r in best]))
+        print("\n== raw per-bet hit rate, best 30 signal/bar/bracket on train, and the same on test "
+              f"(of {len(hits)}; breakeven at {config.FEE_RATE*1e4:.0f}bp) ==")
+        for (k, r), o in zip(best, oos):
+            print(f"{k[0]:>20} {k[1]:>3}m b={k[2]*100:.2f}%  BE {r.breakeven_p:.3f} | train hit {r.hit_rate:.3f} "
+                  f"n={r.bets:<5} edge {r.hit_rate - r.breakeven_p:+.3f} | test hit {o.hit_rate:.3f} n={o.bets:<5} "
+                  f"edge {o.hit_rate - o.breakeven_p:+.3f}")
 
         top = [Params(**{**r.params}) for r in train[:args.top]]
         fees = [float(x) for x in args.fees.split(",")]

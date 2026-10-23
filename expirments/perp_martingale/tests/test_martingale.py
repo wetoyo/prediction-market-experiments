@@ -83,3 +83,48 @@ def test_simulate_losses_then_win_skims_base_profit():
     assert r.steps_hist == {"2": 1}
     assert r.reserve == pytest.approx(1000.0 / 15, rel=0.01)  # G = n0 * b, R = (1+2+4+8) * n0 * b
     assert r.bankroll == pytest.approx(1000.0, abs=1.0)
+
+
+def test_new_indicators_basic_shapes():
+    up = [100 + 0.05 * i * i for i in range(80)]
+    assert indicators.directions(up, "ema_cross")[-1] == 1
+    assert indicators.directions(up, "tsmom")[-1] == 1
+    assert indicators.directions(up, "donchian")[-1] == 1  # new high every bar
+    assert indicators.directions(up, "trend_vote")[-1] == 1
+    assert indicators.directions(up, "rsi_revert")[-1] == -1  # overbought
+    assert indicators.directions(up, "streak_revert")[-1] == -1
+    assert indicators.directions(up, "donchian_fade")[-1] == -1
+    spike = [100.0] * 30 + [110.0]
+    assert indicators.directions(spike, "bb_revert")[-1] == -1
+    assert indicators.directions([1.0] * 3, "funding_revert", funding=[0.0005, -0.0005, 0.00005]) == [-1, 1, 0]
+    for kind in indicators.SIGNALS:
+        assert len(indicators.directions(up, kind, funding=[None] * 80)) == 80
+
+
+def test_binary_ladder_w():
+    # buy at 0.5 + fee 0.0175: w = 0.4825 / 0.5175
+    w = (1 - 0.5 - 0.0175) / (0.5 + 0.0175)
+    g, r = mg.cycle_shape_w(w, 3)
+    risks = [mg.ladder_growth(w) ** k for k in range(4)]
+    for k in range(4):
+        assert risks[k] * w - sum(risks[:k]) == pytest.approx(g)
+    assert mg.kelly_single_w(1 / (1 + w), w) == pytest.approx(0.0, abs=1e-12)  # breakeven p = 1 / (1 + w)
+    assert mg.plan_cycle_w(1000, 0.5, w, 7, "kelly", 0.5, 0.5).n0 == 0
+    full = mg.plan_cycle_w(1000, 0.5, w, 7, "full", 0.5, 0.5)
+    assert full.risk == pytest.approx(1000)
+
+
+def test_simulate_15m_ladder_recovers_and_skims():
+    import backtest_15m as b15
+
+    p = b15.Params(signal="always_long", bar_minutes=1, entry_minute=1, depth=3, sizing="full", bankroll=1000.0)
+    markets, quotes = [], {}
+    for i, result in enumerate(("no", "no", "yes")):
+        o = 900.0 * (i + 1)
+        markets.append({"ticker": f"M{i}", "open_ts": o, "close_ts": o + 900, "result": result})
+        quotes[f"M{i}"] = [[o + 60, 0.49, 0.50]]
+    dirs = ([0.0], [1])  # always long from t=0
+    r = b15.simulate(markets, quotes, None, [], p, trade_from=0, trade_to=1e9, dirs=dirs)
+    assert r.bets == 3 and r.bet_wins == 1
+    assert r.cycles == 1 and r.cycle_wins == 1 and r.steps_hist == {"2": 1}
+    assert r.reserve > 0 and r.bankroll == pytest.approx(1000.0, abs=2.0)
