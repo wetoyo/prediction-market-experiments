@@ -1,7 +1,7 @@
 """longshot_fade backtest: buy the expensive side of cheap-longshot Kalshi
 markets H hours before close, hold to settlement.
 
-    python fetch_universe.py      # 1. settled universe of ~2,600 series (cached)
+    python fetch_universe.py      # 1. settled universe of 503 series (cached)
     python fetch_candles.py       # 2. hourly bid/ask candles for the sample (cached)
     python backtest.py            # 3. grid on train, chosen config once on test, pass/fail
     python backtest.py --describe # calibration tables only
@@ -148,7 +148,7 @@ def trades(tb: Table, mask: np.ndarray, side: str, slip: float = 0.0, cent_1lot:
     else:  # any: buy whichever side is the favourite
         buy_yes = tb.mid[idx] > 0.5
     price = np.where(buy_yes, tb.ask[idx], 1 - tb.bid[idx]) + slip
-    price = np.minimum(price, 0.99)
+    price = np.minimum(price, 1.0)  # slippage past $1 can't be paid: a 1c-bid longshot leaves nothing
     fee = fee_per_contract(price, tb.fee_rate[idx], cent_1lot)
     cost = price + fee
     win = np.where(buy_yes, tb.yes[idx], ~tb.yes[idx])
@@ -229,7 +229,7 @@ def evaluate(tb: Table, cfg: Config, period: np.ndarray, slip=0.0, cent_1lot=Fal
     r, se = cluster_stats(ev, cost, pnl)
     out = {"n": len(idx), "events": len(np.unique(ev)), "roi": r, "se": se,
            "lb": r - 1.96 * se if len(idx) else float("nan"),
-           "win": float(np.mean(pnl > 0)) if len(idx) else float("nan"),
+           "win": float(np.mean(pnl + cost > 0.5)) if len(idx) else float("nan"),  # contract paid $1
            "avg_price": float(price.mean()) if len(idx) else float("nan"),
            "pnl": float(pnl.sum())}
     if ci:

@@ -2,7 +2,7 @@
 
 Three layers, each resumable and cached (gzip JSON under data/, gitignored):
 
-1. Universe: settled markets of a chosen set of series (sample.py picks
+1. Universe: settled markets of a chosen set of series (fetch_universe.py picks
    them; the whole exchange is ~100k settled markets a day, mostly crypto
    ranges and auto-generated props, too many to page), from the live
    `/markets?status=settled&series_ticker=` (settled after the historical
