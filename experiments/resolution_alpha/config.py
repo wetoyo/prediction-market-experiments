@@ -596,6 +596,30 @@ PROFIT_SKIM_RULES_PATH = _str_env(
 # How often to re-evaluate active markets and poll spot prices, in seconds.
 POLL_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_POLL_INTERVAL_SECONDS", 2.0)
 
+# Event-driven evaluation (added 2026-10-24). With POLL_INTERVAL_SECONDS
+# alone, a book or index change waited up to the full 2s (1s on average) for
+# the next pass to see it -- an eternity in the final seconds of a window,
+# where the edge this strategy takes is gone as soon as anyone else reacts.
+# With this on, whenever a market is inside its entry window (or a position
+# is open for the exit backstop) and the websocket is up, the loop also
+# wakes on every ws order-book/index update instead of only on the timer,
+# coalesced to at most one pass per EVENT_MIN_INTERVAL_SECONDS so a burst of
+# deltas can't pin the Pi's CPU. Outside the window, and with the ws down, it
+# polls every POLL_INTERVAL_SECONDS exactly as before. Coinbase spot polls
+# stay on the POLL_INTERVAL_SECONDS cadence either way, and so do sampling
+# rows (one per ticker per POLL_INTERVAL_SECONDS) and zero-fill IOC retries
+# (ZERO_FILL_RETRY_SECONDS), so the only thing that speeds up is how soon a
+# fresh book/index value gets evaluated.
+EVENT_DRIVEN_EVAL = _bool_env("RESOLUTION_ALPHA_EVENT_DRIVEN_EVAL", True)
+EVENT_MIN_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_EVENT_MIN_INTERVAL_SECONDS", 0.1)
+
+# After an IOC entry that filled 0 contracts (the book the walk read had
+# nothing marketable left by the time the order landed), wait this long
+# before trying that ticker again. Defaults to the old poll cadence, so
+# event-driven evaluation retries no faster than the 2s loop always did
+# instead of firing an order at every delta off a book that just proved stale.
+ZERO_FILL_RETRY_SECONDS = _float_env("RESOLUTION_ALPHA_ZERO_FILL_RETRY_SECONDS", POLL_INTERVAL_SECONDS)
+
 # How often to run market discovery, in seconds.
 DISCOVERY_INTERVAL_SECONDS = _float_env("RESOLUTION_ALPHA_DISCOVERY_INTERVAL_SECONDS", 60.0)
 
