@@ -339,25 +339,35 @@ def pass_report(tb: Table, cfg: Config, test: np.ndarray) -> dict:
     return {"base": base, "s1": s1, "s2": s2, "cent": cent, "ex5": ex5, "ex_series": ex_series, "crit": crit}
 
 
-def load_table(ref: str = "market", markets=None, candles=None, series=None) -> Table:
+def load_table(ref: str = "event", single: bool = False) -> Table:
+    """ref="event" (default): H counts back from the event's last close, and
+    single-market events are dropped unless `single`. Why: many markets
+    close early when their outcome happens ("closes early if the event
+    occurs"), so counting back from a market's own close_time would know the
+    outcome was coming. In a multi-market event the last close is shared
+    (a game ending, a data release, a ladder's expiry) and doesn't say which
+    market won; a single-market event's close can. ref="market" counts back
+    from each market's own close (the naive clock, reported as a check)."""
     import fetch_candles
-    if markets is None:
-        markets, candles, series = fetch_candles.load()
-    event_close = None
-    if ref == "event":
-        event_close = defaultdict(float)
-        for m in fetch_candles.load_universe_markets():
-            event_close[m["event"]] = max(event_close[m["event"]], m["close_ts"])
-    return Table(build_rows(markets, candles, series, event_close))
+    markets, candles, series = fetch_candles.load()
+    event_close, event_n = defaultdict(float), defaultdict(int)
+    for m in fetch_candles.load_universe_markets():
+        event_close[m["event"]] = max(event_close[m["event"]], m["close_ts"])
+        event_n[m["event"]] += 1
+    if not single:
+        markets = [m for m in markets if event_n[m["event"]] >= 2]
+    return Table(build_rows(markets, candles, series, event_close if ref == "event" else None))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--describe", action="store_true")
-    ap.add_argument("--ref", choices=("market", "event"), default="market",
-                    help="count H back from the market's close (default) or its event's last close")
+    ap.add_argument("--ref", choices=("market", "event"), default="event",
+                    help="count H back from the event's last close (default) or the market's own close")
+    ap.add_argument("--single", action="store_true", help="keep single-market events (their close can leak the outcome)")
     args = ap.parse_args()
-    tb = load_table(args.ref)
+    tb = load_table(args.ref, args.single)
+    print(f"clock: H before the {args.ref}'s close; single-market events {'kept' if args.single else 'dropped'}")
     train, test, cut = split(tb)
     print(f"rows (market x horizon with a two-sided quote): {tb.n}; markets {len(set(tb.ticker))}, "
           f"events {len(set(tb.event))}, series {len(set(tb.series))}")

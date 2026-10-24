@@ -150,7 +150,8 @@ def load_universe(series: list[str], start_ts: float, max_pages: int = 3,
     path = DATA_DIR / f"{name}_{int(start_ts)}.json.gz"
     cached = _read(path) if path.exists() else {}
     # entries truncated under an earlier page cap are refetched under this one
-    out = {s: cached[s] for s in series if s in cached and not cached[s]["truncated"]}
+    out = {s: cached[s] for s in series
+           if s in cached and (not cached[s]["truncated"] or cached[s].get("max_pages", 10) >= max_pages)}
     todo = [s for s in series if s not in out]
     random.Random(3).shuffle(todo)  # any partial pull is an unbiased subset of series
     print(f"universe: {len(out)} series cached, {len(todo)} to fetch", flush=True)
@@ -163,7 +164,8 @@ def load_universe(series: list[str], start_ts: float, max_pages: int = 3,
         seen = {m["ticker"] for m in live}
         for m in hist:
             m["historical"] = True
-        return s, {"markets": live + [m for m in hist if m["ticker"] not in seen], "truncated": t1 or t2}
+        return s, {"markets": live + [m for m in hist if m["ticker"] not in seen], "truncated": t1 or t2,
+                   "max_pages": mp}
 
     # requests are latency-bound (1000-market pages), so overlap them; the
     # shared throttle still caps the rate
@@ -189,6 +191,9 @@ def load_universe(series: list[str], start_ts: float, max_pages: int = 3,
                 n = sum(len(v["markets"]) for v in out.values())
                 print(f"  {len(out)} series, {n} markets", flush=True)
     save()
+    for s, v in out.items():  # an event's ticker prefix isn't always its series
+        for m in v["markets"]:
+            m["series"] = s
     return out
 
 
@@ -278,8 +283,8 @@ def fetch_candles(markets: list[dict], name: str) -> dict:
         d = get(f"/historical/markets/{m['ticker']}/candlesticks", start_ts=s, end_ts=e, period_interval=60)
         return m["ticker"], parse_candles(d.get("candlesticks", []))
 
-    hist = [m for m in todo if m["historical"]]
-    with ThreadPoolExecutor(4) as ex:
+    hist = sorted((m for m in todo if m["historical"]), key=lambda m: -m["close_ts"])  # newest first
+    with ThreadPoolExecutor(3) as ex:
         for k, (t, rows) in enumerate(ex.map(one, hist)):
             cache[t] = rows
             if k % 500 == 499:

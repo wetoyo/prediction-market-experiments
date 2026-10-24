@@ -3,16 +3,16 @@
 The universe (fetch_universe.py) is every settled binary market since
 2025-10-24 in ~2,600 series: ~1M markets, two-thirds of them sports props and
 state gas-price ladders. Historical candles are one request per market on a
-shared IP, so the candle sample is a stratified draw of ~30k markets:
+shared IP, so the candle sample is a stratified draw of ~17k markets:
 
 - eligible: final volume >= MIN_VOLUME contracts and open >= 2h;
 - each category gets a quota (QUOTA, DEFAULT_QUOTA otherwise; the
   mechanical stratum shares MECH_QUOTA);
 - within a category, series families (first 8 characters of the ticker, so
   the ~50 per-state `KXAAAGAS*` series count once) take turns adding one
-  whole random event each (up to PER_EVENT markets, highest volume first)
-  until the quota is filled, so no single family dominates, the months are
-  covered evenly, and a ladder stays together.
+  whole random event each (up to PER_EVENT of its markets, drawn at random)
+  until the quota is filled, so no single family dominates and the months are
+  covered evenly.
 
 The final-volume filter uses information from after entry. It only picks
 the universe; the strategy's own liquidity filter (backtest.py) uses
@@ -23,13 +23,13 @@ import random
 from collections import defaultdict
 
 MIN_VOLUME = 500
-PER_EVENT = 20
+PER_EVENT = 8
 SEED = 7
 
-QUOTA = {"Sports": 9000, "Economics": 3000, "Politics": 3000, "Elections": 2500, "Entertainment": 3500,
-         "Mentions": 3000, "Science and Technology": 1500, "Companies": 1200, "World": 1200, "Health": 600}
-DEFAULT_QUOTA = 500
-MECH_QUOTA = 3000
+QUOTA = {"Sports": 5000, "Economics": 1800, "Politics": 1800, "Elections": 1500, "Entertainment": 2000,
+         "Mentions": 1800, "Science and Technology": 1000, "Companies": 800, "World": 800, "Health": 400}
+DEFAULT_QUOTA = 300
+MECH_QUOTA = 1800
 
 MECH_CATEGORIES = {"Crypto", "Financials", "Commodities", "Climate and Weather"}
 FAST_FREQ = {"hourly", "fifteen_min"}
@@ -62,7 +62,9 @@ def pick(universe: dict, series: dict) -> list[dict]:
                     and m["close_ts"] - m["open_ts"] >= 2 * 3600):
                 by_event[m["event"]].append(m)
         for e in sorted(by_event):
-            ev = sorted(by_event[e], key=lambda m: -m["volume"])[:PER_EVENT]
+            ev = by_event[e]
+            if len(ev) > PER_EVENT:  # random rungs, not the most liquid: the tails are the point
+                ev = rng.sample(sorted(ev, key=lambda m: m["ticker"]), PER_EVENT)
             tree[stratum(meta)][family(s)].append(ev)
     out = []
     for st in sorted(tree):
