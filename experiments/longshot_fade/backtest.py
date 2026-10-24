@@ -7,11 +7,14 @@ markets H hours before close, hold to settlement.
     python backtest.py --describe # calibration tables only
 
 Mechanics (no lookahead):
-- entry time = close_time - H hours, H in HORIZONS. The quote is the latest
-  hourly candle that ended at or before entry (its closing yes_bid / yes_ask).
-  A market without a two-sided quote then (bid 0 or ask 1) is skipped.
-  A market that had already closed before entry is skipped (a live trader
-  would see it closed).
+- entry time = the event's last close_time - H hours, H in HORIZONS, and
+  single-market events are dropped (see load_table: a market's own close
+  can leak its outcome, because many close early when the outcome happens).
+  `--ref market --single` runs the naive per-market clock as a check.
+- the quote is the latest hourly candle that ended at or before entry (its
+  closing yes_bid / yes_ask). A market without a two-sided quote then (bid
+  0 or ask 1) is skipped, as is one that had already closed before entry
+  (a live trader would see it closed).
 - side "no": the longshot is YES (yes mid in the band); buy NO at
   1 - yes_bid. side "yes": the longshot is NO (1 - yes mid in the band);
   buy YES at yes_ask. side "any": both.
