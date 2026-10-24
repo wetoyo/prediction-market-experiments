@@ -10,16 +10,18 @@ Sampling (see README "Data"):
      price (drop Crypto, Financials, Commodities), drop hourly / 15-min /
      daily series (lifetime too short, mostly price-level ladders), and drop
      series whose title names a price level (gas, oil, index, yields, ...).
-  2. /events?status=settled&min_close_ts=<window start> (paginated): every
-     settled non-multivariate event with a market closing in the window.
-     Live-set events come with their markets nested; events archived before
-     the historical cutoff (/historical/cutoff, 2026-08-25 as of 2026-10-24)
-     need /historical/markets?event_ticker=... one call each. To stop the
-     big game-by-game sports series from swamping the sample, at most
-     MAX_EVENTS_PER_SERIES events per series are taken (seeded random).
-  3. Markets: settled yes/no, volume >= MIN_VOLUME, lifetime >= MIN_LIFE_DAYS,
-     at most MAX_MARKETS_PER_EVENT per event (highest volume first).
-  4. Hourly candles for each kept market over [max(open, window start),
+  2. A seeded stratified random sample of the eligible KX* series (up to
+     SERIES_PER_CATEGORY[cat] per category). Paging every settled event
+     since the window start instead is ~10k pages (sports games swamp it),
+     too slow on a shared, rate-limited IP.
+  3. Per sampled series: settled markets from /markets (the live set) and
+     /historical/markets (archived before /historical/cutoff, 2026-08-25 as
+     of 2026-10-24), keeping those closing after WINDOW_START.
+  4. Markets: settled yes/no, volume >= MIN_VOLUME, >= MIN_LIFE_DAYS of life
+     inside the window; at most MAX_EVENTS_PER_SERIES events per series
+     (seeded random, so game-by-game series don't swamp the sample) and
+     MAX_MARKETS_PER_EVENT markets per event (highest volume first).
+  5. Hourly candles for each kept market over [max(open, window start),
      close]: /series/{s}/markets/{t}/candlesticks for the live set,
      /historical/markets/{t}/candlesticks for archived ones.
 
@@ -149,7 +151,12 @@ def load_cutoff() -> float:
     return ts(d["market_settled_ts"])
 
 
-# ------------------------------------------------------------------ events
+# ------------------------------------------------------------------ markets
+
+SERIES_PER_CATEGORY = {"Sports": 400, "Entertainment": 260, "Politics": 260, "Elections": 260, "Economics": 220,
+                       "Mentions": 150, "Science and Technology": 150, "Climate and Weather": 150, "Companies": 121,
+                       "World": 80, "Health": 49, "Social": 48, "Transportation": 15, "Culture": 2}
+MAX_PAGES = 3
 
 _MKT_KEEP = ("ticker", "event_ticker", "result", "open_time", "close_time", "expected_expiration_time",
              "occurrence_datetime", "yes_sub_title", "title")
@@ -161,96 +168,87 @@ def _slim_market(m: dict) -> dict:
     return row
 
 
-def load_events(series: dict, log=print) -> list[dict]:
-    """Every settled event of an eligible series with a market closing after
-    WINDOW_START. Live-set events carry `markets` (nested); archived ones
-    carry none yet."""
-    name = f"events_{WINDOW_START}.json.gz"
-    got = load(name)
-    if got is not None:
-        return got
-    part = load(name + ".part") or {"out": [], "cursor": None, "page": 0}
-    out, cursor, page = part["out"], part["cursor"], part["page"]
-    while page == 0 or cursor:
-        params = {"status": "settled", "limit": 200, "min_close_ts": day_ts(WINDOW_START),
-                  "with_nested_markets": "true"}
-        if cursor:
-            params["cursor"] = cursor
-        d = get("/events", params)
-        for e in d.get("events", []) or []:
-            if not series_eligible(series.get(e["series_ticker"]) or {}):
-                continue
-            out.append({"event_ticker": e["event_ticker"], "series_ticker": e["series_ticker"],
-                        "category": e.get("category"), "title": e.get("title"),
-                        "markets": [_slim_market(m) for m in (e.get("markets") or [])]})
-        cursor = d.get("cursor")
-        page += 1
-        if page % 100 == 0:
-            save(name + ".part", {"out": out, "cursor": cursor, "page": page})
-            log(f"  events: {page} pages, {len(out)} events")
-        if not d.get("events"):
-            break
-    save(name, out)
-    (DATA_DIR / (name + ".part")).unlink(missing_ok=True)
-    return out
-
-
-def sample_events(events: list[dict], series: dict) -> list[dict]:
-    """Eligible-series events, at most MAX_EVENTS_PER_SERIES per series."""
-    by_series: dict[str, list[dict]] = {}
-    for e in events:
-        s = series.get(e["series_ticker"])
-        if s and series_eligible(s):
-            by_series.setdefault(e["series_ticker"], []).append(e)
+def sample_series(series: dict) -> list[str]:
+    """Stratified seeded-random sample of eligible KX* (2024+) series."""
+    by_cat: dict[str, list[str]] = {}
+    for k, v in series.items():
+        if k.startswith("KX") and series_eligible(v):
+            by_cat.setdefault(v["category"], []).append(k)
     rng = random.Random(SEED)
     out = []
-    for st in sorted(by_series):
-        evs = sorted(by_series[st], key=lambda e: e["event_ticker"])
-        # prefer events whose nested markets already show volume; archived
-        # events (no nested markets) are unknown, keep them eligible
-        evs = [e for e in evs if not e["markets"] or max(m["volume"] for m in e["markets"]) >= MIN_VOLUME]
-        rng.shuffle(evs)
-        out.extend(evs[:MAX_EVENTS_PER_SERIES])
-    return out
+    for cat in sorted(by_cat):
+        ks = sorted(by_cat[cat])
+        rng.shuffle(ks)
+        out += ks[:SERIES_PER_CATEGORY.get(cat, 0)]
+    return sorted(out)
 
 
-def load_event_markets(evs: list[dict], log=print) -> dict:
-    """event ticker -> [slim market] for archived events (one call each)."""
-    name = "hist_event_markets.json.gz"
+def fetch_series_markets(st: str) -> list[dict]:
+    """Settled markets of one series closing after WINDOW_START: the live
+    set (/markets) and the archive (/historical/markets), MAX_PAGES each."""
+    w0 = day_ts(WINDOW_START)
+    out: dict[str, dict] = {}
+    for path, extra in (("/markets", {"status": "settled", "mve_filter": "exclude"}), ("/historical/markets", {})):
+        cursor = None
+        for _ in range(MAX_PAGES):
+            params = {"series_ticker": st, "limit": 1000, **extra}
+            if cursor:
+                params["cursor"] = cursor
+            d = get(path, params)
+            rows = d.get("markets", []) or []
+            for m in rows:
+                if m.get("result") in ("yes", "no") and m.get("close_time") and ts(m["close_time"]) >= w0:
+                    out[m["ticker"]] = dict(_slim_market(m), archived=path != "/markets")
+            cursor = d.get("cursor")
+            if not cursor or not rows:
+                break
+    return list(out.values())
+
+
+def load_series_markets(sts: list[str], log=print) -> dict:
+    name = "series_markets.json.gz"
     cache = load(name) or {}
-    todo = [e for e in evs if not e["markets"] and e["event_ticker"] not in cache]
-    log(f"historical event markets: {len(todo)} to fetch ({len(cache)} cached)")
+    todo = [s for s in sts if s not in cache]
+    log(f"series markets: {len(todo)} series to fetch ({len(cache)} cached)")
 
-    def one(e):
-        d = get("/historical/markets", {"event_ticker": e["event_ticker"], "limit": 1000})
-        return e["event_ticker"], [_slim_market(m) for m in d.get("markets", []) or []]
+    def one(st):
+        try:
+            return st, fetch_series_markets(st)
+        except Exception as e:  # noqa: BLE001
+            log(f"  series {st}: {e}")
+            return st, None
 
     with ThreadPoolExecutor(3) as ex:
         for i, (k, v) in enumerate(ex.map(one, todo)):
-            cache[k] = v
-            if i % 300 == 299:
+            if v is not None:
+                cache[k] = v
+            if i % 100 == 99:
                 save(name, cache)
                 log(f"  {i + 1}/{len(todo)}")
     save(name, cache)
     return cache
 
 
-def select_markets(evs: list[dict], hist: dict, cutoff: float) -> list[dict]:
+def select_markets(by_series: dict, series: dict) -> list[dict]:
+    """Volume/lifetime filter, then caps per event and per series."""
     w0 = day_ts(WINDOW_START)
+    rng = random.Random(SEED)
     out = []
-    for e in evs:
-        ms = e["markets"] or hist.get(e["event_ticker"], [])
-        keep = []
-        for m in ms:
-            if m.get("result") not in ("yes", "no") or not m.get("open_time") or not m.get("close_time"):
+    for st in sorted(by_series):
+        by_event: dict[str, list[dict]] = {}
+        for m in by_series[st] or []:
+            if not m.get("open_time"):
                 continue
             o, c = ts(m["open_time"]), ts(m["close_time"])
-            if c < w0 or m["volume"] < MIN_VOLUME or (c - max(o, w0)) < MIN_LIFE_DAYS * 86400:
+            if m["volume"] < MIN_VOLUME or (c - max(o, w0)) < MIN_LIFE_DAYS * 86400:
                 continue
-            keep.append(dict(m, series_ticker=e["series_ticker"], category=e["category"],
-                             historical=c < cutoff and not e["markets"]))
-        keep.sort(key=lambda m: -m["volume"])
-        out.extend(keep[:MAX_MARKETS_PER_EVENT])
+            by_event.setdefault(m["event_ticker"], []).append(
+                dict(m, series_ticker=st, category=series[st]["category"], historical=m["archived"]))
+        evs = sorted(by_event)
+        rng.shuffle(evs)
+        for e in evs[:MAX_EVENTS_PER_SERIES]:
+            ms = sorted(by_event[e], key=lambda m: -m["volume"])
+            out.extend(ms[:MAX_MARKETS_PER_EVENT])
     return out
 
 
@@ -322,13 +320,11 @@ def load_candles(markets: list[dict], log=print) -> dict:
 def build_sample(log=print) -> tuple[list[dict], dict, dict]:
     """(markets, candles by ticker, series meta). The whole pipeline."""
     series = load_series()
-    cutoff = load_cutoff()
-    events = load_events(series, log)
-    evs = sample_events(events, series)
-    log(f"events: {len(events)} settled since {WINDOW_START} in eligible series; {len(evs)} sampled")
-    hist = load_event_markets(evs, log)
-    markets = select_markets(evs, hist, cutoff)
-    log(f"markets: {len(markets)} pass volume/lifetime filters")
+    sts = sample_series(series)
+    by_series = load_series_markets(sts, log)
+    markets = select_markets(by_series, series)
+    log(f"sample: {len(sts)} series, {sum(1 for v in by_series.values() if v)} with settled markets in window; "
+        f"{len(markets)} markets pass volume/lifetime/caps")
     candles = load_candles(markets, log)
     return markets, candles, series
 

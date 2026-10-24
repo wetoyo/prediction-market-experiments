@@ -150,7 +150,7 @@ def load_universe(series: list[str], start_ts: float, max_pages: dict | None = N
     out = _read(path) if path.exists() else {}
     todo = [s for s in series if s not in out]
     print(f"universe: {len(out)} series cached, {len(todo)} to fetch", flush=True)
-    for k, s in enumerate(todo):
+    def one(s):
         mp = (max_pages or {}).get(s, 10)
         live, t1 = _series_markets("/markets", {"series_ticker": s, "status": "settled"}, start_ts, mp)
         for m in live:
@@ -163,11 +163,17 @@ def load_universe(series: list[str], start_ts: float, max_pages: dict | None = N
         seen = {m["ticker"] for m in live}
         for m in hist:
             m["historical"] = True
-        out[s] = {"markets": live + [m for m in hist if m["ticker"] not in seen], "truncated": t1 or t2}
-        if k % 10 == 9:
-            _write(path, out)
-            n = sum(len(v["markets"]) for v in out.values())
-            print(f"  {len(out)} series, {n} markets", flush=True)
+        return s, {"markets": live + [m for m in hist if m["ticker"] not in seen], "truncated": t1 or t2}
+
+    # requests are latency-bound (1000-market pages), so overlap them; the
+    # shared throttle still caps the rate
+    with ThreadPoolExecutor(4) as ex:
+        for k, (s, v) in enumerate(ex.map(one, todo)):
+            out[s] = v
+            if k % 25 == 24:
+                _write(path, out)
+                n = sum(len(v["markets"]) for v in out.values())
+                print(f"  {len(out)} series, {n} markets", flush=True)
     _write(path, out)
     return out
 

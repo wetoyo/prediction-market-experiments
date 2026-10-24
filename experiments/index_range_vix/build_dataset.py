@@ -8,8 +8,8 @@ Scope (chosen before looking at any results, to bound the request count on a
 shared IP):
   - daily close ladders KXINX / KXNASDAQ100: decision times 10:30, 12:30,
     14:30, 15:30 ET; strikes whose range touches +/-2% of the prior close.
-  - hourly above/below KXINXU / KXNASDAQ100U: events closing 13:00 and
-    15:00 ET, decision times >= 30 min before close; strikes within +/-1% of
+  - hourly above/below KXINXU / KXNASDAQ100U: events closing 15:00 ET
+    (decisions 10:30, 12:30, 14:30 -- decision times >= 30 min before close); strikes within +/-1% of
     the prior close, thinned to multiples of 25 (S&P) / 100 (NDX) -- adjacent
     5/10-point thresholds are near-duplicate bets.
   - window: --since (default 2025-10-27, one year). The shared IP gets ~1
@@ -44,7 +44,7 @@ SERIES = {
     "KXNASDAQ100U": ("NDX", "hourly", 0.01, 100),
 }
 DECISION_TIMES = [(10, 30), (12, 30), (14, 30), (15, 30)]
-HOURLY_CLOSES = {13, 15}
+HOURLY_CLOSES = {15}
 CUTOFF_TS = datetime(2026, 8, 25, tzinfo=ZoneInfo("UTC")).timestamp()
 
 
