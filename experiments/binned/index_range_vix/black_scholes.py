@@ -1,5 +1,5 @@
 """Lognormal ("Black-76") digital probabilities for index range and
-above/below markets. Same model as ../btc_implied_prob/black_scholes.py,
+above/below markets. Same model as ../../btc_implied_prob/black_scholes.py,
 plus the bucket (range) case.
 
 Over a few intraday hours the forward is the spot to well under a basis

@@ -2,7 +2,4 @@ __pycache__/
 .env
 data/
 backtest_runs/
-positions_state.json
-live/logs/
-live/.runner.pid
 .pytest_cache/

@@ -327,6 +327,14 @@ def main():
         c = calibration(rs, k, spot_map)
         print(f"  {lbl}: n={c['n']} Brier model={c['brier_model']:.4f} market={c['brier_market']:.4f} | "
               f"logloss model={c['logloss_model']:.4f} market={c['logloss_market']:.4f}")
+    print("  test, quotes with spread <= 10c only (a wide quote's mid is not a forecast):")
+    for s_ in sorted({r["series"] for r in test}):
+        rs = [r for r in test if r["series"] == s_ and r["ask"] - r["bid"] <= 0.10]
+        if not rs:
+            continue
+        c = calibration(rs, k, spot_map)
+        print(f"    {s_:13s} n={c['n']:5d} Brier model={c['brier_model']:.4f} market={c['brier_market']:.4f} | "
+              f"logloss model={c['logloss_model']:.4f} market={c['logloss_market']:.4f}")
 
     if spot_map is None:
         print("\nvariance forecast, VIX model vs Kalshi ladder (daily series):")

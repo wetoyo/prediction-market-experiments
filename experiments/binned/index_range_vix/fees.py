@@ -1,4 +1,4 @@
-"""Kalshi taker fee, copied from ../resolution_alpha/fees.py (formula and
+"""Kalshi taker fee, copied from ../../resolution_alpha/fees.py (formula and
 rounding validated against live fills there). The index series report
 `fee_type: "quadratic"`, `fee_multiplier: 1` (checked on /series/KXINX,
 KXINXU, KXNASDAQ100, KXNASDAQ100U on 2026-10-24), i.e. the standard
