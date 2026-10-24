@@ -128,10 +128,19 @@ def build_series(series: str, since: date, verbose: bool = True) -> list[dict]:
             if sk is None:
                 continue
             lo, hi = sk
-            a = lo if lo is not None else -1e18
-            b = hi if hi is not None else 1e18
-            if b < pc * (1 - band) or a > pc * (1 + band):
-                continue
+            if lo is not None and hi is not None:
+                # a range bucket: keep if it overlaps the band
+                if hi < pc * (1 - band) or lo > pc * (1 + band):
+                    continue
+            else:
+                # one-sided: an above/below threshold is kept if the strike is in the band
+                k_ = lo if lo is not None else hi
+                if kind == "hourly" and not (pc * (1 - band) <= k_ <= pc * (1 + band)):
+                    continue
+                # daily ladders: a tail is kept if its YES region reaches into the band
+                if kind == "daily" and ((lo is None and hi < pc * (1 - band))
+                                        or (hi is None and lo > pc * (1 + band))):
+                    continue
             if thin is not None:
                 k = lo if lo is not None else hi
                 if abs(round(k) % thin) > 0.5 and abs(round(k) % thin - thin) > 0.5:

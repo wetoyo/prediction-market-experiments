@@ -365,6 +365,7 @@ def load_table(ref: str = "event", single: bool = False) -> Table:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--describe", action="store_true")
+    ap.add_argument("--train-only", action="store_true", help="never touch the test period (for debugging)")
     ap.add_argument("--ref", choices=("market", "event"), default="event",
                     help="count H back from the event's last close (default) or the market's own close")
     ap.add_argument("--single", action="store_true", help="keep single-market events (their close can leak the outcome)")
@@ -376,7 +377,9 @@ def main():
           f"events {len(set(tb.event))}, series {len(set(tb.series))}")
     print(f"settled {data.iso(tb.settled_ts.min())} .. {data.iso(tb.settled_ts.max())}; "
           f"train < {data.iso(cut)} <= test")
-    describe(tb, train | test, "all")
+    if args.train_only:
+        test = np.zeros(tb.n, bool)
+    describe(tb, train, "train")
     if args.describe:
         return
 
@@ -387,7 +390,8 @@ def main():
             for uni in ("all", "mech"):
                 cfg = Config(side, lo, hi, h, uni, 0, 0.10)
                 print(f"  {cfg.label():70s} TRAIN {fmt(evaluate(tb, cfg, train))}")
-                print(f"  {'':70s} TEST  {fmt(evaluate(tb, cfg, test, ci=True))}")
+                if test.any():
+                    print(f"  {'':70s} TEST  {fmt(evaluate(tb, cfg, test, ci=True))}")
 
     res = grid(tb, train)
     ranked = sorted([cr for cr in res if cr[1]["n"] >= MIN_TRAIN_TRADES and cr[1]["events"] >= MIN_TRAIN_EVENTS],
@@ -405,7 +409,8 @@ def main():
         if cr:
             c, r = cr[0]
             print(f"  {c.label():70s} TRAIN {fmt(r)}")
-            print(f"  {'':70s} TEST  {fmt(evaluate(tb, c, test))}")
+            if test.any():
+                print(f"  {'':70s} TEST  {fmt(evaluate(tb, c, test))}")
 
     chosen = choose(res)
     if chosen is None:
@@ -413,7 +418,8 @@ def main():
         return
     cfg, r = chosen
     print(f"\n== chosen on train: {cfg.label()} ==\n  TRAIN {fmt(r)}")
-    pass_report(tb, cfg, test)
+    if test.any():
+        pass_report(tb, cfg, test)
 
 
 if __name__ == "__main__":

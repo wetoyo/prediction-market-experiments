@@ -283,11 +283,13 @@ def fetch_candles(markets: list[dict], name: str) -> dict:
         d = get(f"/historical/markets/{m['ticker']}/candlesticks", start_ts=s, end_ts=e, period_interval=60)
         return m["ticker"], parse_candles(d.get("candlesticks", []))
 
-    hist = sorted((m for m in todo if m["historical"]), key=lambda m: -m["close_ts"])  # newest first
+    # random order (seeded): a pull cut short by rate limits is still spread over the whole window
+    hist = sorted((m for m in todo if m["historical"]), key=lambda m: m["ticker"])
+    random.Random(5).shuffle(hist)
     with ThreadPoolExecutor(3) as ex:
         for k, (t, rows) in enumerate(ex.map(one, hist)):
             cache[t] = rows
-            if k % 500 == 499:
+            if k % 100 == 99:
                 _write(path, cache)
                 print(f"  historical candles {k + 1}/{len(hist)}", flush=True)
     _write(path, cache)
