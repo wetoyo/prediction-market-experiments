@@ -1726,6 +1726,7 @@ async def run_forever() -> None:
     ws_task = asyncio.create_task(ws_feed.run())
 
     last_discovery = 0.0
+    discovery_task: asyncio.Task | None = None
     last_spot_poll = 0.0
     last_bankroll_refresh = 0.0
     sim_sync_task: asyncio.Task | None = None
@@ -1759,7 +1760,17 @@ async def run_forever() -> None:
                     continue
                 lightweight_trading_phase = _lightweight_trading_phase(now_ts)
 
-            if now_ts - last_discovery >= config.DISCOVERY_INTERVAL_SECONDS:
+            # Discovery runs in the background (2026-10-24): it's several
+            # paginated REST scans, and awaiting it inline froze every
+            # evaluation pass, exit check and spot poll for as long as it took,
+            # once every DISCOVERY_INTERVAL_SECONDS -- in an entry window too.
+            # The loop keeps evaluating the previous list until the new one
+            # lands. Only with no list at all yet (startup, or every discovery
+            # so far failed) is there nothing to evaluate, so wait for it then.
+            if discovery_task is None and now_ts - last_discovery >= config.DISCOVERY_INTERVAL_SECONDS:
+                discovery_task = asyncio.create_task(asyncio.to_thread(find_active_markets, _underlying_scan_filter()))
+                last_discovery = now_ts
+            if discovery_task is not None and (discovery_task.done() or not active_markets):
                 try:
                     # Longest interval first (2026-09-11): when a 15m and 1hr
                     # market share a close_time (see _kelly_group_key),
@@ -1769,14 +1780,11 @@ async def run_forever() -> None:
                     # the incident this grouping fixes (see
                     # _group_kelly_cap_contracts). Sorted once here rather than
                     # on every evaluation pass.
-                    active_markets = sorted(
-                        await asyncio.to_thread(find_active_markets, _underlying_scan_filter()),
-                        key=lambda m: -m.interval_minutes,
-                    )
+                    active_markets = sorted(await discovery_task, key=lambda m: -m.interval_minutes)
                     logger.info("discovered %d active markets", len(active_markets))
                 except Exception:
                     logger.exception("discovery failed, keeping previous market list")
-                last_discovery = now_ts
+                discovery_task = None
 
             now = datetime.now(timezone.utc)
             key = _cycle_key(now)
