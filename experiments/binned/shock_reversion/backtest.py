@@ -356,9 +356,7 @@ def summary(trades: list[Trade]) -> dict:
                 vol24=float(np.median([t.shock.vol_24h for t in trades])) if trades else float("nan"),
                 drift=float(np.nanmean([t.drift() for t in trades])) if trades else float("nan"),
                 drift0=float(np.nanmean([t.drift0() for t in trades])) if trades else float("nan"),
-                cost=float(np.mean([t.entry - t.mid_in + t.fee_in + t.fee_out
-                                    + (0 if t.settled else t.mid_out - t.exit if t.side == "yes"
-                                       else t.exit - (1 - t.mid_out)) for t in trades])) if trades else float("nan"))
+                cost=float(np.nanmean([t.drift() - t.pnl() for t in trades])) if trades else float("nan"))
 
 
 def fmt(s: dict) -> str:
@@ -366,7 +364,7 @@ def fmt(s: dict) -> str:
         return "n=0"
     return (f"n={s['n']:5d} ev={s['events']:4d} ROI={s['roi'] * 100:+6.2f}% CI[{s['lo'] * 100:+6.2f},"
             f"{s['hi'] * 100:+6.2f}] +1c={s['roi1'] * 100:+6.2f}% +2c={s['roi2'] * 100:+6.2f}% "
-            f"win={s['win'] * 100:4.1f}% settled={s['settled'] * 100:3.0f}% drift={s['drift'] * 100:+5.2f}c ({s['drift0'] * 100:+5.2f}c from shock)")
+            f"win={s['win'] * 100:4.1f}% settled={s['settled'] * 100:3.0f}% drift={s['drift'] * 100:+5.2f}c ({s['drift0'] * 100:+5.2f}c from shock) cost={s['cost'] * 100:4.2f}c")
 
 
 def drop_best_events(trades: list[Trade], k: int = 5) -> list[Trade]:
