@@ -164,6 +164,20 @@ class Trade:
     settled: bool
     fee_in: float
     fee_out: float
+    mid_in: float = float("nan")   # mid at entry
+    mid_out: float = float("nan")  # mid at exit, or the settlement value
+
+    def drift(self) -> float:
+        """Mid change from entry to exit in the traded side's favour
+        (before spread and fees): the raw signal."""
+        d = self.mid_out - self.mid_in
+        return d if self.side == "yes" else -d
+
+    def drift0(self) -> float:
+        """Same, measured from the shock candle's mid (an instant entry,
+        which the hourly data can't execute): an upper bound on the signal."""
+        d = self.mid_out - self.shock.mid_after
+        return d if self.side == "yes" else -d
 
     def pnl(self, slip: float = 0.0) -> float:
         e = self.entry + slip
@@ -204,8 +218,11 @@ def simulate(m: dict, q: Series, shocks: list[Shock], direction: str, horizon: i
                 xv = 0.0  # nobody to sell to: worst case, mark at zero
             settled = False
             busy_until = t_exit
+        mid_in = (q.bid[i] + q.ask[i]) / 2.0
+        mid_out = result if settled else (q.bid[j] + q.ask[j]) / 2.0
         out.append(Trade(s, "yes" if buy_yes else "no", float(px), float(xv), settled,
-                         fee_per_contract(px, mult), 0.0 if settled else fee_per_contract(xv, mult)))
+                         fee_per_contract(px, mult), 0.0 if settled else fee_per_contract(xv, mult),
+                         float(mid_in), float(mid_out)))
     return out
 
 
@@ -336,7 +353,12 @@ def summary(trades: list[Trade]) -> dict:
                 roi2=roi(trades, 0.02), win=float(np.mean([t.pnl() > 0 for t in trades])) if trades else float("nan"),
                 pnl=sum(t.pnl() for t in trades), settled=float(np.mean([t.settled for t in trades])) if trades else 0,
                 entry_vol=float(np.median([t.shock.entry_vol for t in trades])) if trades else float("nan"),
-                vol24=float(np.median([t.shock.vol_24h for t in trades])) if trades else float("nan"))
+                vol24=float(np.median([t.shock.vol_24h for t in trades])) if trades else float("nan"),
+                drift=float(np.nanmean([t.drift() for t in trades])) if trades else float("nan"),
+                drift0=float(np.nanmean([t.drift0() for t in trades])) if trades else float("nan"),
+                cost=float(np.mean([t.entry - t.mid_in + t.fee_in + t.fee_out
+                                    + (0 if t.settled else t.mid_out - t.exit if t.side == "yes"
+                                       else t.exit - (1 - t.mid_out)) for t in trades])) if trades else float("nan"))
 
 
 def fmt(s: dict) -> str:
@@ -344,7 +366,7 @@ def fmt(s: dict) -> str:
         return "n=0"
     return (f"n={s['n']:5d} ev={s['events']:4d} ROI={s['roi'] * 100:+6.2f}% CI[{s['lo'] * 100:+6.2f},"
             f"{s['hi'] * 100:+6.2f}] +1c={s['roi1'] * 100:+6.2f}% +2c={s['roi2'] * 100:+6.2f}% "
-            f"win={s['win'] * 100:4.1f}% settled={s['settled'] * 100:3.0f}%")
+            f"win={s['win'] * 100:4.1f}% settled={s['settled'] * 100:3.0f}% drift={s['drift'] * 100:+5.2f}c ({s['drift0'] * 100:+5.2f}c from shock)")
 
 
 def drop_best_events(trades: list[Trade], k: int = 5) -> list[Trade]:
@@ -456,6 +478,9 @@ def main(argv=None) -> None:
         if best_d:
             out(f"  best {d}: t={best_d[0]:+.2f} {best_d[1].label()}")
 
+    if not scored:
+        out("  no config had enough train trades")
+        return
     best = scored[0][1]
     out(f"\n## held-out test, chosen config: {best.label()}")
     te = u.run(best, lo=split)
