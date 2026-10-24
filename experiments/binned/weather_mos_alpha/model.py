@@ -21,7 +21,7 @@ from __future__ import annotations
 import bisect
 import math
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from scipy import stats
@@ -191,6 +191,3 @@ def int_logloss(em: ErrorModel, obs: int, mu: float, sigma: float) -> float:
     p = em.cdf(obs + 0.5, mu, sigma) - em.cdf(obs - 0.5, mu, sigma)
     return -math.log(max(p, 1e-6))
 
-
-def utc_now_ts() -> float:
-    return datetime.now(timezone.utc).timestamp()

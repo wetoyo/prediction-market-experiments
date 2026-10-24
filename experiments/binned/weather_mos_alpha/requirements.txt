@@ -1,0 +1,5 @@
+# requests: Kalshi public REST + IEM (MOS archive, NWS CLI reports).
+# numpy: bootstrap. scipy: Student-t CDF.
+requests
+numpy
+scipy

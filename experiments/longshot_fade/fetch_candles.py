@@ -3,12 +3,11 @@
 
 import data
 import sample
-from fetch_universe import START, pick_series
+from fetch_universe import MAX_PAGES, START, pick_series
 
 
 def _universe(series):
-    return data.load_universe(pick_series(series), START,
-                              {t: 2 for t in pick_series(series) if series[t]["frequency"] in sample.FAST_FREQ})
+    return data.load_universe(pick_series(series), START, MAX_PAGES)
 
 
 def load_universe_markets() -> list[dict]:

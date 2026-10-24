@@ -142,26 +142,24 @@ def _series_markets(path: str, params: dict, start_ts: float, max_pages: int) ->
     return rows_out, True
 
 
-def load_universe(series: list[str], start_ts: float, max_pages: dict | None = None,
+def load_universe(series: list[str], start_ts: float, max_pages: int = 3,
                   name: str = "universe") -> dict:
     """series -> {"markets": [...], "truncated": bool}, settled since start_ts,
     live + historical. Checkpointed every 50 series."""
     DATA_DIR.mkdir(exist_ok=True)
     path = DATA_DIR / f"{name}_{int(start_ts)}.json.gz"
-    out = _read(path) if path.exists() else {}
+    cached = _read(path) if path.exists() else {}
+    # entries truncated under an earlier page cap are refetched under this one
+    out = {s: cached[s] for s in series if s in cached and not cached[s]["truncated"]}
     todo = [s for s in series if s not in out]
     random.Random(3).shuffle(todo)  # any partial pull is an unbiased subset of series
     print(f"universe: {len(out)} series cached, {len(todo)} to fetch", flush=True)
     def one(s):
-        mp = (max_pages or {}).get(s, 10)
+        mp = max_pages
         live, t1 = _series_markets("/markets", {"series_ticker": s, "status": "settled"}, start_ts, mp)
         for m in live:
             m["historical"] = False
-        hist, t2 = [], False
-        # the live set reaches back to the cutoff; only go to /historical if
-        # the live set wasn't truncated
-        if not t1:
-            hist, t2 = _series_markets("/historical/markets", {"series_ticker": s}, start_ts, mp)
+        hist, t2 = _series_markets("/historical/markets", {"series_ticker": s}, start_ts, mp)
         seen = {m["ticker"] for m in live}
         for m in hist:
             m["historical"] = True
@@ -169,6 +167,11 @@ def load_universe(series: list[str], start_ts: float, max_pages: dict | None = N
 
     # requests are latency-bound (1000-market pages), so overlap them; the
     # shared throttle still caps the rate
+    def save():
+        allc = dict(cached)
+        allc.update(out)
+        _write(path, allc)
+
     def safe(s):
         try:
             return one(s)
@@ -182,10 +185,10 @@ def load_universe(series: list[str], start_ts: float, max_pages: dict | None = N
                 continue
             out[s] = v
             if k % 25 == 24:
-                _write(path, out)
+                save()
                 n = sum(len(v["markets"]) for v in out.values())
                 print(f"  {len(out)} series, {n} markets", flush=True)
-    _write(path, out)
+    save()
     return out
 
 

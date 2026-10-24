@@ -7,8 +7,6 @@ of it from 2026-08-15 (same station, same number). Stations were read off
 each series' `rules_primary` text.
 """
 
-import os
-
 # series -> (ICAO station for MOS / IEM CLI, IANA time zone)
 CITIES = {
     "KXHIGHNY": ("KNYC", "America/New_York"),       # Central Park
@@ -46,18 +44,21 @@ MOS_MODELS = ("NBS", "GFS", "NAM")
 MOS_DELAY_HOURS = {"NBS": 2.0, "GFS": 4.0, "NAM": 4.0}
 
 # Decision times (local clock): (label, days before the event day, hour).
-DECISION_TIMES = (("d-1_10h", 1, 10), ("d0_08h", 0, 8))
+# An event's markets open at 10:00 ET the day before, so the first hourly
+# candle closes at 11:00 ET. The first run used d-1 10:00 local, which left
+# every Eastern city with no quote at that time; 12:00 local is after the
+# open everywhere.
+DECISION_TIMES = (("d-1_12h", 1, 12), ("d0_08h", 0, 8))
 
-# Backtest window (event dates) and the chronological split.
-BACKTEST_START = "2026-01-15"
+# Backtest window (event dates) and the chronological split. The window
+# was meant to start 2026-01-15, but Kalshi's historical candle endpoint is
+# one market per request at ~2.5 req/s per IP, and a second fetch running
+# from the same IP cut that to ~0.2 req/s, so the fetch (newest first) was
+# stopped at 2026-06-20. The split was then set at 60% of the window's days
+# before anything was priced.
+BACKTEST_START = "2026-06-20"
 BACKTEST_END = "2026-10-22"
-# Train on event dates before this (65% of the window), test on the rest.
-SPLIT_DATE = "2026-07-16"
+# Train on event dates before this, test on the rest (60/40 by days).
+SPLIT_DATE = "2026-09-02"
 # Error model may use CLI history from this date (strictly before the split).
 ERROR_HISTORY_START = "2023-01-01"
-
-FEE_RATE = 0.07
-
-# --- live runner -------------------------------------------------------------
-DRY_RUN = os.environ.get("WXA_DRY_RUN", "1") != "0"
-ORDER_TAG = "wxa"

@@ -276,11 +276,11 @@ def calibration(cands: list[dict]) -> dict:
 
 
 def kelly_replay(trades: list[dict], frac: float = 0.25, cap_trade: float = 0.02, cap_event: float = 0.05,
-                 bankroll: float = 1000.0) -> dict:
+                 cap_day: float = 0.5, bankroll: float = 1000.0) -> dict:
     """Fractional Kelly per trade (f* = (q - c) / (1 - c), q = model prob of
-    the side, c = cost/contract), capped per trade and per event; bankroll
-    marked once per date (all of a date's trades sized off the same
-    morning bankroll, settled together)."""
+    the side, c = cost/contract), capped per trade, per event and per date
+    (cap_day of the morning bankroll in total: a date's ~20 events settle
+    together); bankroll marked once per date."""
     by_day = defaultdict(list)
     for t in trades:
         by_day[t["day"]].append(t)
@@ -293,7 +293,7 @@ def kelly_replay(trades: list[dict], frac: float = 0.25, cap_trade: float = 0.02
             c = t["cost"]
             f = max(0.0, (t["prob"] - c) / (1 - c)) * frac
             stake = min(f, cap_trade) * start
-            room = cap_event * start - ev_used[t["event"]]
+            room = min(cap_event * start - ev_used[t["event"]], cap_day * start - sum(ev_used.values()))
             stake = max(0.0, min(stake, room))
             n = math.floor(stake / c)
             if n <= 0:
@@ -305,11 +305,44 @@ def kelly_replay(trades: list[dict], frac: float = 0.25, cap_trade: float = 0.02
     return {"start": bankroll, "end": br, "return": br / bankroll - 1, "max_drawdown": mdd}
 
 
+def _ladders(cands: list[dict]) -> list[list[dict]]:
+    lad = defaultdict(list)
+    for r in cands:
+        lad[(r["event"], r["label"])].append(r)
+    out = []
+    for rows in lad.values():
+        if all(r["bid"] is not None and r["ask"] is not None for r in rows) and any(r["won"] for r in rows):
+            out.append(rows)
+    return out
+
+
+def blend_logloss(cands: list[dict], w: float) -> float:
+    """Winning-bucket log-loss of p ~ model^w * market^(1-w), renormalized per ladder."""
+    tot, n = 0.0, 0
+    for rows in _ladders(cands):
+        mids = [(r["bid"] + r["ask"]) / 2 for r in rows]
+        s = sum(mids)
+        q = [max(x / s, 1e-4) for x in mids]
+        p = [max(r["p"], 1e-4) for r in rows]
+        mix = [pi ** w * qi ** (1 - w) for pi, qi in zip(p, q)]
+        z = sum(mix)
+        k = [i for i, r in enumerate(rows) if r["won"]][0]
+        tot += -math.log(mix[k] / z)
+        n += 1
+    return tot / max(n, 1)
+
+
+def blend_weight(cands: list[dict]) -> tuple[float, float]:
+    """Weight on the model (0..1) minimizing train log-loss of the pool."""
+    best = min(((blend_logloss(cands, w / 20), w / 20) for w in range(21)))
+    return best[1], best[0]
+
+
 GRID = [dict(threshold=th, min_price=mp, sides=sd, labels=lb)
         for th in (0.02, 0.04, 0.06, 0.08, 0.10, 0.15, 0.20)
         for mp in (0.02, 0.05, 0.10)
         for sd in ("yes", "no", "both")
-        for lb in ("d-1_10h", "d0_08h", "both")]
+        for lb in ("d-1_12h", "d0_08h", "both")]
 
 
 def fmt(s: dict) -> str:
@@ -419,7 +452,7 @@ def main() -> None:
     rep["test_minus_best5"] = summarize(d5)
     print(f"  -best 5 days: {fmt(rep['test_minus_best5'])}")
     print("  by decision time / side:")
-    for lb in ("d-1_10h", "d0_08h"):
+    for lb in ("d-1_12h", "d0_08h"):
         for sd in ("yes", "no"):
             sub = [t for t in tt if t["label"] == lb and t["side"] == sd]
             if sub:
@@ -444,16 +477,53 @@ def main() -> None:
         print(f"    Brier    model {cal['brier_model']:.4f}  market {cal['brier_market']:.4f}")
         print(f"    logloss  model {cal['logloss_model']:.4f}  market {cal['logloss_market']:.4f}")
         print(f"    winning-bucket logloss  model {cal['winner_logloss_model']:.4f}  market {cal['winner_logloss_market']:.4f}")
-    for lb in ("d-1_10h", "d0_08h"):
+    for lb in ("d-1_12h", "d0_08h"):
         c2 = calibration([r for r in test if r["label"] == lb])
         rep[f"calibration_test_{lb}"] = c2
         if c2:
             print(f"    {lb}: Brier model {c2['brier_model']:.4f} vs market {c2['brier_market']:.4f}; "
                   f"logloss {c2['logloss_model']:.4f} vs {c2['logloss_market']:.4f}")
 
+    # --- diagnostics (reported after the one test above; nothing here is selected on test)
+    print("\n  diagnostics:")
+    print("    train top-10 configs re-run on test (report only):")
+    rep["train_top_on_test"] = []
+    for _p, g, s_tr in res[:10]:
+        s_te = summarize(select_trades(test, rounding=args.fee_rounding, **g))
+        rep["train_top_on_test"].append((g, s_tr["roi"], s_te))
+        print(f"      {g['threshold']:.2f} {g['min_price']:.2f} {g['sides']:4s} {g['labels']:8s} "
+              f"train ROI {s_tr['roi'] * 100:+6.1f}%  test {fmt(s_te)}")
+    w, ll_tr = blend_weight(train)
+    ll_te_blend = blend_logloss(test, w)
+    ll_te_mkt = blend_logloss(test, 0.0)
+    rep["blend"] = {"w_model": w, "train_logloss": ll_tr, "test_logloss_blend": ll_te_blend,
+                    "test_logloss_market": ll_te_mkt}
+    print(f"    log-linear pool of model and market fit on train: weight on model {w:.2f}; "
+          f"test winning-bucket logloss blend {ll_te_blend:.4f} vs market alone {ll_te_mkt:.4f}")
+    for lb in ("d-1_12h", "d0_08h"):
+        sub = [r for r in cands if r["label"] == lb]
+        seen = {}
+        for r in sub:
+            seen[(r["event"])] = r
+        errs = []
+        for c in cities:
+            for ev, r in seen.items():
+                if r["city"] != c["series"]:
+                    continue
+                obs = c["obs"].get(r["day"])
+                if obs is not None:
+                    errs.append((r["day"] >= split, obs - r["mu"]))
+        for is_test, name in ((False, "train"), (True, "test")):
+            e = [x for t_, x in errs if t_ == is_test]
+            if e:
+                bias = sum(e) / len(e)
+                rmse = math.sqrt(sum(x * x for x in e) / len(e))
+                rep[f"model_err_{lb}_{name}"] = {"n": len(e), "bias": bias, "rmse": rmse}
+                print(f"    model error {lb} {name}: n={len(e)} bias {bias:+.2f}F rmse {rmse:.2f}F")
+
     kel = kelly_replay(tt)
     rep["kelly_test"] = kel
-    print(f"\n  quarter-Kelly replay on test ($1000, 2%/trade, 5%/event caps): "
+    print(f"\n  quarter-Kelly replay on test ($1000; caps 2%/trade, 5%/event, 50%/date): "
           f"end ${kel['end']:.0f} ({kel['return'] * 100:+.1f}%), max DD {kel['max_drawdown'] * 100:.1f}%")
 
     # --- verdict

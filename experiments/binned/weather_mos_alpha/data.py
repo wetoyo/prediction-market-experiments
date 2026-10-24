@@ -6,8 +6,9 @@ cache and touches the network only for what is missing.
 Kalshi (public REST, no auth):
   * settled markets per series from /markets (settled after the historical
     cutoff, 2026-08-25 as of 2026-10-24) and /historical/markets (older);
-  * hourly yes bid/ask candles per market from
-    /series/{s}/markets/{t}/candlesticks or /historical/markets/{t}/candlesticks.
+  * hourly yes bid/ask candles: /historical/markets/{t}/candlesticks (one
+    market per request -- the slow part, ~2.5 req/s per IP) or, for live
+    events, /series/{s}/events/{e}/candlesticks (a whole ladder per request).
   The settled market's `expiration_value` is the official daily max the
   event settled on, and `result` says which bucket won.
 

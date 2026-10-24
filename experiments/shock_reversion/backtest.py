@@ -115,7 +115,7 @@ class Shock:
     move_vol: float       # contracts traded during the move
     vol_24h: float        # contracts traded in the 24h before the shock
     entry_vol: float      # contracts traded in the entry hour (capacity proxy)
-    spread: float         # spread at the shock candle
+    spread: float         # wider of the spreads at the window start and the shock candle
     hours_to_close: float  # from entry to the earlier of close / expected expiration
 
 
@@ -137,7 +137,7 @@ def find_shocks(m: dict, q: Series, window: int, thresh: float, close_ts: int) -
             t_entry=te, i_entry=ie, move=b - a, mid_before=a, mid_after=b,
             move_vol=float(cum[t + 1] - cum[t - window + 1]),
             vol_24h=float(cum[t + 1] - cum[max(0, t - 23)]),
-            entry_vol=float(q.vol[ie]), spread=float(q.ask[t] - q.bid[t]),
+            entry_vol=float(q.vol[ie]), spread=float(max(q.ask[t] - q.bid[t], q.ask[t - window] - q.bid[t - window])),
             hours_to_close=(close_ts - te) / H))
     return out
 
@@ -220,16 +220,16 @@ class Config:
     low_vol: bool = False          # move volume below the train median for its window/thresh
     mid_band: bool = False          # pre-move mid in [0.15, 0.85]
     far_close: bool = False         # >= 48h from entry to close/expected expiration
-    max_spread: float = 0.10
+    max_spread: float = 0.05        # both ends of the move (a spread blowing out is not a move)
 
     def label(self) -> str:
         return (f"{self.direction} k={self.window}h X={self.thresh * 100:.0f}c H={self.horizon}h"
                 f"{' lowvol' if self.low_vol else ''}{' mid' if self.mid_band else ''}"
-                f"{' far' if self.far_close else ''}")
+                f"{' far' if self.far_close else ''} sp<={self.max_spread * 100:.0f}c")
 
 
 GRID = dict(window=[1, 3], thresh=[0.05, 0.10, 0.15], horizon=[6, 24, 72], direction=["fade", "momentum"],
-            low_vol=[False, True], mid_band=[False, True], far_close=[False, True])
+            low_vol=[False, True], mid_band=[False, True], far_close=[False, True], max_spread=[0.02, 0.05])
 
 
 def grid_configs() -> list[Config]:
