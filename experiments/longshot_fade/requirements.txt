@@ -1,0 +1,4 @@
+# requests: Kalshi public REST (settled markets, series, candlesticks).
+requests
+# numpy: bootstrap.
+numpy
