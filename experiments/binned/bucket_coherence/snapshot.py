@@ -100,13 +100,27 @@ def evaluate(books: dict, tickers: list[str], fee_mult: float = 1.0) -> dict:
             "missing_no_ask": sum(1 for a in no_asks if not a)}
 
 
+_FEE_MULT: dict[str, float] = {}
+
+
+def fee_mult(series: str) -> float:
+    """The series' `fee_multiplier` (KXMLBGAME is 0.5; the rest screened are 1)."""
+    if series not in _FEE_MULT:
+        try:
+            _FEE_MULT[series] = float(api.get(f"/series/{series}")["series"].get("fee_multiplier") or 1.0)
+        except Exception:  # noqa: BLE001
+            _FEE_MULT[series] = 1.0
+    return _FEE_MULT[series]
+
+
 def sweep() -> list[dict]:
     ts = datetime.now(timezone.utc)
     rows, raw = [], {}
     for lad in open_ladders():
         books, span = fetch_books(lad["tickers"])
         r = {"ts": ts.isoformat(), "series": lad["series"], "event": lad["event"], "span_s": round(span, 2),
-             "mins_to_close": round((lad["close_ts"] - time.time()) / 60, 1), **evaluate(books, lad["tickers"])}
+             "mins_to_close": round((lad["close_ts"] - time.time()) / 60, 1),
+             **evaluate(books, lad["tickers"], fee_mult(lad["series"]))}
         rows.append(r)
         raw[lad["event"]] = {"tickers": lad["tickers"], "books": books}
     SNAP_DIR.mkdir(parents=True, exist_ok=True)
@@ -116,10 +130,18 @@ def sweep() -> list[dict]:
 
 
 def load_rows() -> list[dict]:
+    """Saved sweeps, re-evaluated from the raw books (so fixes to evaluate()
+    or the fee multiplier apply to old sweeps too)."""
     rows = []
     for p in sorted(SNAP_DIR.glob("*.json.gz")):
         with gzip.open(p, "rt") as f:
-            rows += json.load(f)["rows"]
+            d = json.load(f)
+        for r in d["rows"]:
+            raw = d["raw"].get(r["event"])
+            if raw:
+                books = {t: {k: [tuple(x) for x in v] for k, v in b.items()} for t, b in raw["books"].items()}
+                r.update(evaluate(books, raw["tickers"], fee_mult(r["series"])))
+            rows.append(r)
     return rows
 
 

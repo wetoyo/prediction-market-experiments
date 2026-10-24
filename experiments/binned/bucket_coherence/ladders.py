@@ -49,8 +49,13 @@ def exhaustiveness(markets: list[dict]) -> dict:
     other = sorted({r for r in results if r not in ("yes", "no")})
     opens = sorted(m["open_ts"] for m in markets if m.get("open_ts") is not None)
     late = sum(1 for t in opens if opens and t - opens[0] > 300)
+    # A "scalar" settlement (tie, cancellation, retirement) pays each bucket a
+    # fraction. If the fractions sum to $1 a full set is still made whole.
+    vals = [m.get("settle") for m in markets]
+    payout = sum(vals) if all(v is not None for v in vals) else None
     return {"n": len(markets), "n_yes": n_yes, "other_results": other, "late_listed": late,
-            "clean": n_yes == 1 and not other}
+            "clean": n_yes == 1 and not other,
+            "payout_sum": payout, "payout_ok": payout is not None and abs(payout - 1.0) < 1e-6}
 
 
 # ---- order-book depth -----------------------------------------------------

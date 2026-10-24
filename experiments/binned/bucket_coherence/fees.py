@@ -41,9 +41,11 @@ def fee_per_contract_raw(price: float, fee_rate: float = DEFAULT_FEE_RATE, multi
 
 
 # Maker fees: series with fee_type "quadratic_with_maker_fees" (KXFED,
-# KXFEDDECISION, KXCPI, ... ~160 series) also charge resting orders, at
+# KXFEDDECISION, KXCPI and, of the ladders screened here, the game-winner
+# series KXNFLGAME/KXMLBGAME/KXNHLGAME/KXNBAGAME/KXNCAAFGAME/KXEPLGAME/
+# KXATPMATCH; ~160 series in all) also charge resting orders, at
 # 0.0175 * p * (1 - p) per contract per Kalshi's fee schedule. Plain
-# "quadratic" series (the crypto/index/FX/weather/sports ladders) charge no
-# maker fee. Resting every leg as a maker order is therefore fee-free there,
+# "quadratic" series (the crypto/index/FX/weather ladders) charge no maker
+# fee. Resting every leg as a maker order is therefore fee-free there,
 # but it is no longer an arbitrage: the legs fill one at a time, if at all.
 MAKER_FEE_RATE = 0.0175

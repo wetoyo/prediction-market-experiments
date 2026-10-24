@@ -53,6 +53,7 @@ W0 = datetime(2026, 6, 24, tzinfo=timezone.utc)
 MID = datetime(2026, 8, 25, tzinfo=timezone.utc)   # = Kalshi's historical cutoff; recent half after
 W1 = datetime(2026, 10, 24, tzinfo=timezone.utc)
 WINDOW_CAP_S = 48 * 3600
+SEED_LOOKBACK_S = 14 * 86400  # hourly candles before the window, to seed each bucket's quote
 BATCH_CANDLE_CAP = 10000   # live batch endpoint: markets x minutes per request
 BATCH_MARKET_CAP = 100
 
@@ -143,8 +144,16 @@ def event_markets(event: str) -> tuple[list[dict], bool]:
         rows = api.paginate("/historical/markets", "markets", event_ticker=event, limit=1000)
         hist = True
     ms = [{"ticker": m["ticker"], "open_ts": ts(m.get("open_time")), "close_ts": ts(m.get("close_time")),
-           "result": m.get("result") or "", "status": m.get("status")} for m in rows]
+           "result": m.get("result") or "", "status": m.get("status"),
+           "settle": _float(m.get("settlement_value_dollars"))} for m in rows]
     return ms, hist
+
+
+def _float(v) -> float | None:
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 # ---- candles ----------------------------------------------------------------
@@ -280,7 +289,7 @@ def process_event(series: str, ev: dict, fee_mult: float) -> dict | None:
     candles = fetch_candles(tickers, lo, hi, hist)
     seed = {}
     if lo > latest_open + 60:  # seed each bucket's quote as of the window start from hourly candles
-        hc = fetch_candles(tickers, int(latest_open), lo, hist, period=60)
+        hc = fetch_candles(tickers, int(max(latest_open, lo - SEED_LOOKBACK_S)), lo, hist, period=60)
         seed = {t: rows[-1][1:] for t, rows in hc.items() if rows}
     g0 = int(math.ceil(lo / 60) * 60)
     g1 = int(math.floor(hi / 60) * 60)
@@ -400,6 +409,42 @@ def summarize(results: list[dict], min_run: int = 3) -> dict:
         "events": sorted(crit_events)}}
 
 
+def detail(results: list[dict], min_run: int = 3) -> None:
+    """When persistent apparent arbs happen and how big they are, by group,
+    plus exhaustiveness (YES counts and scalar payouts) over every event."""
+    mid = MID.timestamp()
+    ok = [r for r in results if not r.get("skip") and r.get("valid_minutes")]
+    print(f"\nexhaustiveness: {len(ok)} events, exactly one YES in {sum(r['exh']['clean'] for r in ok)}, "
+          f"full-set payout = $1 in {sum(r['exh'].get('payout_ok', False) for r in ok)}, "
+          f"buckets listed late in {sum(1 for r in ok if r['exh']['late_listed'])}")
+    for r in ok:
+        if not r["exh"]["clean"]:
+            print("  not one-YES:", r["event"], r["exh"]["other_results"], "payout", r["exh"].get("payout_sum"))
+    for half, keep in (("recent", lambda r: r["close_ts"] >= mid), ("early", lambda r: r["close_ts"] < mid)):
+        runs_ = [(r["group"], r["event"], (r["close_ts"] - x[0]) / 3600, x[1], 100 * x[2], 100 * x[3], x[4])
+                 for r in ok if keep(r) for side in ("yes", "no") for x in r[f"{side}_runs"] if x[1] >= min_run]
+        print(f"\n{half} half: {len(runs_)} persistent runs (>= {min_run} min) on "
+              f"{len({x[1] for x in runs_})} events")
+        print("group | runs | events | hours to close (median, p10-p90) | mean edge c | mean max edge c | "
+              "median length min | static runs")
+        groups = defaultdict(list)
+        for x in runs_:
+            groups[x[0]].append(x)
+        for g, xs in sorted(groups.items()):
+            h = sorted(x[2] for x in xs)
+            print(f"{g} | {len(xs)} | {len({x[1] for x in xs})} | {statistics.median(h):.1f} "
+                  f"({h[len(h) // 10]:.1f}-{h[9 * len(h) // 10]:.1f}) | {statistics.mean(x[4] for x in xs):.2f} | "
+                  f"{statistics.mean(x[5] for x in xs):.2f} | {statistics.median(x[3] for x in xs)} | "
+                  f"{sum(1 for x in xs if x[6] == 0)}")
+        ev = defaultdict(list)
+        for x in runs_:
+            ev[x[1]].append(x[5])
+        if ev:
+            mx = [max(v) for v in ev.values()]
+            print(f"per-event max edge: mean {statistics.mean(mx):.2f}c, median {statistics.median(mx):.2f}c, "
+                  f">= 1c on {sum(1 for m in mx if m >= 1)} events, >= 2c on {sum(1 for m in mx if m >= 2)}")
+
+
 def print_summary(s: dict) -> None:
     cols = ["series", "half", "events", "clean", "valid_hours", "yes_best_med_c", "yes_gross_persist", "yes_any",
             "yes_persist", "yes_static", "yes_edge_mean_c", "yes_maxlen", "no_best_med_c", "no_gross_persist",
@@ -423,3 +468,4 @@ if __name__ == "__main__":
     s = summarize(load_results())
     (DATA_DIR / "summary.json").write_text(json.dumps(s, indent=1))
     print_summary(s)
+    detail(load_results())

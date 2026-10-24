@@ -1,0 +1,6 @@
+# requests: Kalshi public REST (events, markets, candlesticks, order books).
+requests
+# numpy: per-minute forward-filled quote grids in screen.py.
+numpy
+# pytest: offline tests (tests/).
+pytest

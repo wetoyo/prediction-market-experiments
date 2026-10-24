@@ -12,7 +12,7 @@ it, build it if it passes, bin it if not, then move to the next.
 | 2 | **longshot_fade**: buy NO on cheap contracts (≤10c) across all Kalshi categories some hours before close | Favorite-longshot bias, the most documented pricing bias in prediction markets (takers on cheap contracts lose most) | Kalshi settled markets + candlesticks, every category | pending |
 | 3 | **index_range_vix**: S&P/Nasdaq daily range and above/below markets (`KXINX`, `KXINXU`, `KXNASDAQ100*`) priced off VIX/VXN-implied vol | Same model as `btc_implied_prob`, moved to equities, where the option market is deeper and the Kalshi side thinner | Kalshi settled markets + candlesticks; daily VIX + index closes | pending |
 | 4 | **shock_reversion**: fade large, fast price moves on Kalshi markets that have no hard news driver | Overreaction to flow in thin books; prices partly revert | Kalshi candlesticks across categories | pending |
-| 5 | **bucket_coherence**: buy the whole set of a mutually exclusive bucket ladder when the YES asks sum to < $1 after fees (or the NOs to < n-1) | Pure arbitrage across buckets of one event | Needs order-book snapshots, which Kalshi doesn't keep: backtest only off candlestick asks, or forward-log it | pending |
+| 5 | **bucket_coherence**: buy the whole set of a mutually exclusive bucket ladder when the YES asks sum to < $1 after fees (or the NOs to < n-1) | Pure arbitrage across buckets of one event | Needs order-book snapshots, which Kalshi doesn't keep: backtest only off candlestick asks, or forward-log it | binned 2026-10-24: ladders are coherent to within the taker fee; persistent candle arbs on 89 recent events but mean 0.54c/set (<1c bar), 0 arbs in 312 live order-book snapshots (`binned/bucket_coherence/`) |
 
 ## Ranking rationale
 

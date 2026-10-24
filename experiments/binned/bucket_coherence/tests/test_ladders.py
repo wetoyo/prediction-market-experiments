@@ -36,6 +36,12 @@ def test_exhaustiveness():
     assert not e["clean"] and e["n_yes"] == 0 and e["late_listed"] == 1
     void = [{"result": "yes", "open_ts": 0}, {"result": "void", "open_ts": 0}]
     assert ladders.exhaustiveness(void)["other_results"] == ["void"]
+    # a tie settled 50/50 is not one-YES, but a full set is still paid $1
+    tie = [{"result": "scalar", "open_ts": 0, "settle": 0.5}, {"result": "scalar", "open_ts": 0, "settle": 0.5}]
+    e = ladders.exhaustiveness(tie)
+    assert not e["clean"] and e["payout_ok"]
+    short = [{"result": "no", "open_ts": 0, "settle": 0.0}, {"result": "no", "open_ts": 0, "settle": 0.0}]
+    assert not ladders.exhaustiveness(short)["payout_ok"]
 
 
 def test_asks_from_book():
