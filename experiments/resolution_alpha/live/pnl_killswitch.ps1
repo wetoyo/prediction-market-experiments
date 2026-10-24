@@ -23,7 +23,7 @@
 # REQUIRED_CONSECUTIVE_BREACHES consecutive checks.
 #
 # Usage: .\pnl_killswitch.ps1 -RunnerPid <pid> [-BaselineDollars 100] [-ThresholdPct -10]
-# Run from expirments/resolution_alpha/live with .env already loaded into
+# Run from experiments/resolution_alpha/live with .env already loaded into
 # this process's environment (start_live.ps1 does this before launching).
 
 param(
