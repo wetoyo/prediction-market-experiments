@@ -406,10 +406,11 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-train-trades", type=int, default=250)
     ap.add_argument("--no-tables", action="store_true")
+    ap.add_argument("--offline", action="store_true", help="use only cached data, no network")
     args = ap.parse_args(argv)
     out = lambda s="": print(s, flush=True)  # noqa: E731
 
-    markets, candles, series = data.build_sample(lambda s: None)
+    markets, candles, series = data.build_sample(lambda s: None, offline=args.offline)
     u = Universe(markets, candles, series)
     split = choose_split(u)
     u.set_vol_medians(split)

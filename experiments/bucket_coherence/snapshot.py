@@ -35,7 +35,7 @@ import ladders  # noqa: E402
 from screen import SERIES  # noqa: E402
 
 SNAP_DIR = Path(__file__).resolve().parent / "data" / "snapshots"
-EVENTS_PER_SERIES = 4
+EVENTS_PER_SERIES = 3
 MAX_HORIZON_S = 8 * 86400
 
 
@@ -71,10 +71,9 @@ def fetch_books(tickers: list[str]) -> tuple[dict, float]:
     seconds between the first and last batch call."""
     books, t_first, t_last = {}, None, None
     for i in range(0, len(tickers), 100):
-        t = time.time()
-        t_first = t_first or t
         d = api.get("/markets/orderbooks", cache=False, tickers=tickers[i:i + 100])
         t_last = time.time()
+        t_first = t_first or t_last  # span = first response -> last response; 0 for one call
         for ob in d.get("orderbooks", []) or []:
             o = ob.get("orderbook_fp") or ob.get("orderbook") or {}
             books[ob["ticker"]] = {

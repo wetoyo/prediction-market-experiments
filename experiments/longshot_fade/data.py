@@ -22,6 +22,7 @@ exponentially on 429 / 5xx.
 
 import gzip
 import json
+import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -51,7 +52,7 @@ def _throttle():
 
 def get(path: str, **params) -> dict:
     """GET with the shared throttle and exponential backoff on 429/5xx/network errors."""
-    for attempt in range(10):
+    for attempt in range(16):
         _throttle()
         try:
             resp = _session.get(f"{BASE_URL}{path}", params=params, timeout=60)
@@ -61,7 +62,7 @@ def get(path: str, **params) -> dict:
             continue
         if resp.status_code == 429 or resp.status_code >= 500:
             print(f"  [retry {attempt}] {path}: HTTP {resp.status_code}", flush=True)
-            time.sleep(min(2 ** attempt, 60))
+            time.sleep(min(2 ** attempt, 60) * (0.75 + 0.5 * random.random()))
             continue
         if resp.status_code == 404:
             return {}
@@ -149,6 +150,7 @@ def load_universe(series: list[str], start_ts: float, max_pages: dict | None = N
     path = DATA_DIR / f"{name}_{int(start_ts)}.json.gz"
     out = _read(path) if path.exists() else {}
     todo = [s for s in series if s not in out]
+    random.Random(3).shuffle(todo)  # any partial pull is an unbiased subset of series
     print(f"universe: {len(out)} series cached, {len(todo)} to fetch", flush=True)
     def one(s):
         mp = (max_pages or {}).get(s, 10)
@@ -167,8 +169,17 @@ def load_universe(series: list[str], start_ts: float, max_pages: dict | None = N
 
     # requests are latency-bound (1000-market pages), so overlap them; the
     # shared throttle still caps the rate
-    with ThreadPoolExecutor(4) as ex:
-        for k, (s, v) in enumerate(ex.map(one, todo)):
+    def safe(s):
+        try:
+            return one(s)
+        except RuntimeError as e:  # persistent 429s: leave it for the next run
+            print(f"  skipped {s}: {e}", flush=True)
+            return s, None
+
+    with ThreadPoolExecutor(3) as ex:
+        for k, (s, v) in enumerate(ex.map(safe, todo)):
+            if v is None:
+                continue
             out[s] = v
             if k % 25 == 24:
                 _write(path, out)

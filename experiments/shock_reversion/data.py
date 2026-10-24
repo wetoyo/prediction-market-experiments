@@ -55,7 +55,7 @@ DROP_FREQUENCIES = {"hourly", "fifteen_min", "daily"}
 PRICE_LEVEL_RE = re.compile(
     r"\b(price|prices|gas|oil|gold|silver|index|s&p|nasdaq|dow|yield|treasury|stock|shares|bitcoin|btc|eth|"
     r"ethereum|crypto|euro|dollar|yen|forex|fx|exchange rate|close above|closing|market cap|wti|brent|"
-    r"temperature|high temp|low temp)\b", re.I)
+    r"temperature|high temp|low temp|mortgage|treasur(y|ies)|bond)\b", re.I)
 MAX_EVENTS_PER_SERIES = 12
 MAX_MARKETS_PER_EVENT = 4
 MIN_VOLUME = 2000.0
@@ -66,6 +66,7 @@ _session = requests.Session()
 _lock = threading.Lock()
 _last = [0.0]
 _count = [0]
+_n429 = [0]
 
 
 def _throttle() -> None:
@@ -83,7 +84,8 @@ def get(path: str, params: dict | None = None, retries: int = 20) -> dict:
         try:
             resp = _session.get(BASE_URL + path, params=params or {}, timeout=60)
             if resp.status_code == 429 or resp.status_code >= 500:
-                time.sleep(min(0.5 * 2 ** attempt, 60))
+                _n429[0] += 1
+                time.sleep(min(0.5 * 2 ** attempt, 10) * random.uniform(0.5, 1.5))
                 continue
             if resp.status_code == 404:
                 return {}
@@ -153,9 +155,9 @@ def load_cutoff() -> float:
 
 # ------------------------------------------------------------------ markets
 
-SERIES_PER_CATEGORY = {"Sports": 400, "Entertainment": 260, "Politics": 260, "Elections": 260, "Economics": 220,
-                       "Mentions": 150, "Science and Technology": 150, "Climate and Weather": 150, "Companies": 121,
-                       "World": 80, "Health": 49, "Social": 48, "Transportation": 15, "Culture": 2}
+SERIES_PER_CATEGORY = {"Sports": 250, "Entertainment": 160, "Politics": 160, "Elections": 160, "Economics": 150,
+                       "Mentions": 100, "Science and Technology": 100, "Climate and Weather": 100, "Companies": 80,
+                       "World": 60, "Health": 49, "Social": 48, "Transportation": 15, "Culture": 2}
 MAX_PAGES = 3
 
 _MKT_KEEP = ("ticker", "event_ticker", "result", "open_time", "close_time", "expected_expiration_time",
@@ -317,10 +319,18 @@ def load_candles(markets: list[dict], log=print) -> dict:
     return cache
 
 
-def build_sample(log=print) -> tuple[list[dict], dict, dict]:
-    """(markets, candles by ticker, series meta). The whole pipeline."""
+def build_sample(log=print, offline: bool = False) -> tuple[list[dict], dict, dict]:
+    """(markets, candles by ticker, series meta). The whole pipeline.
+    offline=True uses only what is already cached (no network)."""
     series = load_series()
     sts = sample_series(series)
+    if offline:
+        cache = load("series_markets.json.gz") or {}
+        by_series = {s: cache[s] for s in sts if s in cache}
+        markets = select_markets(by_series, series)
+        candles = load("candles.json.gz") or {}
+        markets = [m for m in markets if m["ticker"] in candles]
+        return markets, candles, series
     by_series = load_series_markets(sts, log)
     markets = select_markets(by_series, series)
     log(f"sample: {len(sts)} series, {sum(1 for v in by_series.values() if v)} with settled markets in window; "
@@ -333,4 +343,4 @@ if __name__ == "__main__":
     t0 = time.time()
     ms, cs, _ = build_sample(lambda s: print(s, flush=True))
     print(f"done: {len(ms)} markets, {sum(1 for m in ms if cs.get(m['ticker']))} with candles, "
-          f"{_count[0]} requests, {time.time() - t0:.0f}s")
+          f"{_count[0]} requests ({_n429[0]} throttled), {time.time() - t0:.0f}s")

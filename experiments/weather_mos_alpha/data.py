@@ -312,7 +312,7 @@ def fetch_all(what: str = "all") -> None:
         from concurrent.futures import ThreadPoolExecutor
         stations = [st for st, _tz in config.CITIES.values()]
         jobs = [(st, mdl, [ym]) for st in stations for mdl in config.MOS_MODELS for ym in months]
-        with ThreadPoolExecutor(4) as ex:  # IEM is slow (~3-5s/request), not rate limited
+        with ThreadPoolExecutor(2) as ex:  # IEM is slow (~3-5s/request), not rate limited
             list(ex.map(lambda st: load_cli(st, years), stations))
             def safe(j):
                 try:
