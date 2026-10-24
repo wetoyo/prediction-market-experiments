@@ -27,6 +27,9 @@ class SpotFeed:
         self._history_seconds = history_seconds
         self._history: dict[str, deque] = {}
         self._lock = threading.Lock()
+        # Keep-alive: one Coinbase host polled every tick per underlying --
+        # skip a fresh TCP + TLS handshake on each poll.
+        self._session = requests.Session()
 
     def poll(self, underlying: str) -> float | None:
         """Fetches the current spot price for `underlying` and records it.
@@ -38,7 +41,7 @@ class SpotFeed:
         if not product_id:
             return None
         try:
-            response = requests.get(COINBASE_SPOT_URL.format(product_id=product_id), timeout=5)
+            response = self._session.get(COINBASE_SPOT_URL.format(product_id=product_id), timeout=5)
             response.raise_for_status()
             price = float(response.json()["data"]["amount"])
         except (requests.RequestException, KeyError, ValueError, TypeError):

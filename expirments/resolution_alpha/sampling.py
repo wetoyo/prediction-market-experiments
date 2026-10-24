@@ -14,9 +14,15 @@ it's the only DB already implicitly expected by this project's tooling
 (nothing else here talks to a database).
 """
 
+import logging
+import queue
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
+
+logger = logging.getLogger("resolution_alpha.sampling")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS samples (
@@ -73,6 +79,107 @@ def init_db(db_path: str) -> None:
             if column_name not in existing_columns:
                 conn.execute(ddl)
         conn.commit()
+
+
+_INSERT_SQL = (
+    "INSERT INTO samples (id, ticker, series_ticker, category, underlying, direction, strike, "
+    "sample_time_utc, close_time_utc, seconds_to_expiry, spot, favored_side, model_prob, "
+    "market_price, z) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+_OUTCOME_SQL = "UPDATE samples SET traded = ?, skip_reason = ? WHERE id = ?"
+
+
+class SampleWriter:
+    """record_sample / record_trade_outcome for the live loop, without the
+    disk I/O on the event loop (added 2026-10-24). The module-level functions
+    below open a connection and commit per row: two fsyncs per in-window
+    market per tick, on the Pi's SD card, synchronously between the
+    probability estimate and the order -- every market evaluated earlier in a
+    tick delayed every later market's order by its writes, and stalled the
+    ws feed's delta processing for as long (the stale-book failure mode).
+
+    Here both calls only enqueue; one daemon thread owns a single connection
+    and commits whatever has queued up as one transaction. Row ids are
+    assigned up front (MAX(id)/sqlite_sequence + 1, then counting) so
+    record_sample can still hand back the id record_trade_outcome needs
+    without waiting for the INSERT. Safe because this is the only process
+    that inserts (check_resolutions.py only UPDATEs). Rows still queued when
+    the process is killed outright are lost -- at most ~flush_interval worth.
+    """
+
+    def __init__(self, db_path: str, flush_interval: float = 0.5):
+        init_db(db_path)
+        with _connect(db_path) as conn:
+            max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM samples").fetchone()[0]
+            seq_row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'samples'").fetchone()
+        self._next_id = max(max_id, seq_row[0] if seq_row else 0) + 1
+        self._db_path = db_path
+        self._flush_interval = flush_interval
+        self._queue: queue.Queue = queue.Queue()
+        self._thread = threading.Thread(target=self._run, name="sample-writer", daemon=True)
+        self._thread.start()
+
+    def record_sample(
+        self,
+        *,
+        ticker: str,
+        series_ticker: str,
+        category: str,
+        underlying: str,
+        direction: str,
+        strike: float,
+        close_time: datetime,
+        seconds_to_expiry: float,
+        spot: float,
+        favored_side: str,
+        model_prob: float,
+        market_price: float | None,
+        z: float | None,
+    ) -> int:
+        sample_id = self._next_id
+        self._next_id += 1
+        self._queue.put((_INSERT_SQL, (
+            sample_id, ticker, series_ticker, category, underlying, direction, strike,
+            datetime.now(timezone.utc).isoformat(), close_time.isoformat(), seconds_to_expiry,
+            spot, favored_side, model_prob, market_price, z,
+        )))
+        return sample_id
+
+    def record_trade_outcome(self, *, sample_id: int, traded: bool, skip_reason: str | None) -> None:
+        self._queue.put((_OUTCOME_SQL, (1 if traded else 0, skip_reason, sample_id)))
+
+    def close(self, timeout: float = 5.0) -> None:
+        """Flush what's queued and stop the writer thread."""
+        self._queue.put(None)
+        self._thread.join(timeout)
+
+    def _run(self) -> None:
+        conn = sqlite3.connect(self._db_path, timeout=30.0)
+        try:
+            while True:
+                item = self._queue.get()
+                batch = [item]
+                # Let a tick's worth of rows pile up, then take them all in one commit.
+                if item is not None:
+                    time.sleep(self._flush_interval)
+                while True:
+                    try:
+                        batch.append(self._queue.get_nowait())
+                    except queue.Empty:
+                        break
+                stopping = None in batch
+                statements = [entry for entry in batch if entry is not None]
+                if statements:
+                    try:
+                        with conn:  # one transaction per batch
+                            for sql, params in statements:
+                                conn.execute(sql, params)
+                    except Exception:
+                        logger.exception("sample writer: dropped a batch of %d statement(s)", len(statements))
+                if stopping:
+                    return
+        finally:
+            conn.close()
 
 
 def record_sample(

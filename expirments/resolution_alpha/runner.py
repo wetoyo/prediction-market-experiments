@@ -57,7 +57,14 @@ Order placement is unchanged: order_manager.py's OrderManager wraps
 KalshiTradingClient from prediction_market_scraper/Clients/Kalshi/
 live_execution.py (via kalshi_gateway.py), the same authenticated REST
 trading client as before -- websockets are additive for market data only,
-not a replacement for how orders get placed.
+not a replacement for how orders get placed. Since 2026-10-24 that client
+runs over one pooled keep-alive HTTPS session (see kalshi_gateway.py), so an
+order no longer pays a fresh TLS handshake.
+
+Tick cadence: every POLL_INTERVAL_SECONDS, except that while a market is
+inside its entry window (or a position is open) and the websocket is up, a
+ws book/index update also starts a pass, at most one per
+EVENT_MIN_INTERVAL_SECONDS (config.EVENT_DRIVEN_EVAL, added 2026-10-24).
 
 Defaults to DRY_RUN (see config.py, order_manager.py): every intended trade
 is logged, not placed. The probability model has now been checked for
@@ -525,7 +532,7 @@ _STAT_KEYS = (
     "skip_blacklisted", "skip_budget_exhausted", "skip_orderbook_failed",
     "skip_no_liquidity", "skip_low_market_prob", "skip_dynamic_window", "skip_min_seconds_left",
     "skip_ceiling_lt1", "skip_no_edge_size", "skip_no_fillable_depth", "skip_low_edge", "skip_no_bankroll",
-    "skip_no_shard_collateral", "skip_side_flip_hold", "skip_near_strike",
+    "skip_no_shard_collateral", "skip_side_flip_hold", "skip_near_strike", "skip_zero_fill_cooldown",
 )
 
 
@@ -548,7 +555,7 @@ def _log_stats_summary(stats: dict, window_seconds: float) -> None:
         "eval summary (last %.0fs): in_window=%d traded=%d | untrusted_underlying=%d no_spot=%d no_vol=%d low_model_prob=%d "
         "blacklisted=%d budget=%d orderbook_failed=%d no_liquidity=%d "
         "low_market_prob=%d dynamic_window=%d min_seconds_left=%d ceiling=%d no_edge_size=%d no_fillable_depth=%d low_edge=%d "
-        "no_bankroll=%d no_shard_collateral=%d side_flip_hold=%d near_strike=%d",
+        "no_bankroll=%d no_shard_collateral=%d side_flip_hold=%d near_strike=%d zero_fill_cooldown=%d",
         window_seconds, stats["in_window"], stats["traded"],
         stats["skip_untrusted_underlying"],
         stats["skip_no_spot"], stats["skip_no_vol"], stats["skip_low_model_prob"],
@@ -557,7 +564,7 @@ def _log_stats_summary(stats: dict, window_seconds: float) -> None:
         stats["skip_dynamic_window"], stats["skip_min_seconds_left"], stats["skip_ceiling_lt1"], stats["skip_no_edge_size"],
         stats["skip_no_fillable_depth"], stats["skip_low_edge"],
         stats["skip_no_bankroll"], stats["skip_no_shard_collateral"], stats["skip_side_flip_hold"],
-        stats["skip_near_strike"],
+        stats["skip_near_strike"], stats["skip_zero_fill_cooldown"],
     )
 
 
@@ -628,20 +635,45 @@ def _dynamic_entry_window_seconds(underlying: str, market_probability: float) ->
     return config.ENTRY_WINDOW_SECONDS * (normalized ** config.ENTRY_WINDOW_EXPONENT)
 
 
-def _spot_source(market: ActiveMarket, spot_feed: SpotFeed, ws_feed: KalshiWebsocketFeed):
-    """Returns (now_epoch, spot, history) from whichever source has data for
-    this underlying, preferring ws_feed's direct CF Benchmarks index feed
-    (BTC/ETH only, see ws_feed.py) over spot_feed's Coinbase REST proxy.
-    """
-    if ws_feed.connected() and ws_feed.index_id_for(market.underlying):
-        latest = ws_feed.latest_index_value(market.underlying)
-        if latest is not None:
-            return latest[0], latest[1], ws_feed.index_history(market.underlying)
+# underlying -> ((source, latest sample), (now_epoch, spot, history, sigma_log)).
+_spot_vol_cache: dict[str, tuple] = {}
 
-    latest = spot_feed.latest(market.underlying)
+
+def _spot_and_vol(market: ActiveMarket, spot_feed: SpotFeed, ws_feed: KalshiWebsocketFeed):
+    """Returns (now_epoch, spot, history, sigma_log) from whichever source
+    has data for this underlying, preferring ws_feed's direct CF Benchmarks
+    index feed (BTC/ETH only, see ws_feed.py) over spot_feed's Coinbase REST
+    proxy -- sigma_log is realized_vol_per_sqrt_second(history), None when
+    there's not enough history -- or None with no spot at all.
+
+    Cached per underlying until a new sample lands (added 2026-10-24): every
+    BTC market closing in the same window (15m, hourly, each KXBTCD strike)
+    shares one history, so copying it and recomputing its vol once per market
+    per pass was repeated work -- and with config.EVENT_DRIVEN_EVAL a pass can
+    run several times a second. Both feeds only ever change a history by
+    appending (the head is trimmed only on append), so the newest sample
+    identifies its contents.
+    """
+    use_ws = ws_feed.connected() and ws_feed.index_id_for(market.underlying)
+    latest = ws_feed.latest_index_value(market.underlying) if use_ws else None
+    source = "ws"
     if latest is None:
-        return None
-    return latest[0], latest[1], spot_feed.history(market.underlying)
+        latest = spot_feed.latest(market.underlying)
+        source = "spot"
+        if latest is None:
+            return None
+    key = (source, latest)
+    cached = _spot_vol_cache.get(market.underlying)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    history = ws_feed.index_history(market.underlying) if source == "ws" else spot_feed.history(market.underlying)
+    result = (latest[0], latest[1], history, realized_vol_per_sqrt_second(history))
+    _spot_vol_cache[market.underlying] = (key, result)
+    return result
+
+
+# sampling.SampleWriter, created in run_forever when config.SAMPLING_ENABLED.
+_sample_writer = None
 
 
 def _maybe_sample_market(
@@ -650,6 +682,7 @@ def _maybe_sample_market(
     spot: float,
     seconds_left: float,
     ws_feed: KalshiWebsocketFeed,
+    cycle_state: dict,
 ) -> int | None:
     """Records one dataset row for this market/tick if sampling is enabled
     (config.SAMPLING_ENABLED) -- see sampling.py's module docstring. Called
@@ -672,9 +705,19 @@ def _maybe_sample_market(
     Deliberately does not touch cycle_state, stats, or any trading gate --
     this function's only side effect is a DB write, and callers wrap it in
     try/except so a sampling bug can never affect a real trade decision.
+
+    At most one row per ticker per POLL_INTERVAL_SECONDS (2026-10-24):
+    config.EVENT_DRIVEN_EVAL can evaluate a market many times a second, and
+    the dataset keeps the cadence it was always collected at. The write itself
+    is queued to sampling.SampleWriter's thread, not done here.
     """
-    if not config.SAMPLING_ENABLED:
+    if not config.SAMPLING_ENABLED or _sample_writer is None:
         return None
+    last_sampled = cycle_state.setdefault("last_sampled_at", {})
+    now_mono = time.monotonic()
+    if now_mono - last_sampled.get(market.ticker, float("-inf")) < config.POLL_INTERVAL_SECONDS:
+        return None
+    last_sampled[market.ticker] = now_mono
 
     market_price = None
     orderbook_fp = ws_feed.get_orderbook_fp(market.ticker)
@@ -682,8 +725,7 @@ def _maybe_sample_market(
         top_of_book = walk_book(orderbook_fp, estimate.favored_side, 1.0)
         market_price = top_of_book.avg_price
 
-    return sampling.record_sample(
-        config.SAMPLING_DB_PATH,
+    return _sample_writer.record_sample(
         ticker=market.ticker,
         series_ticker=market.series_ticker,
         category="crypto",  # only category discovery.py scans as of 2026-08-07
@@ -708,12 +750,10 @@ def _finalize_sample(sample_id: int | None, *, traded: bool, skip_reason: str | 
     Wrapped in its own try/except, same rationale as _maybe_sample_market:
     a sampling bug must never affect a real trade decision.
     """
-    if sample_id is None:
+    if sample_id is None or _sample_writer is None:
         return
     try:
-        sampling.record_trade_outcome(
-            config.SAMPLING_DB_PATH, sample_id=sample_id, traded=traded, skip_reason=skip_reason,
-        )
+        _sample_writer.record_trade_outcome(sample_id=sample_id, traded=traded, skip_reason=skip_reason)
     except Exception:
         logger.exception("failed to record trade outcome for sample_id=%s (non-fatal)", sample_id)
 
@@ -895,11 +935,10 @@ async def _check_exit_conditions(
         if position["exit_attempted"]:
             continue
 
-        source = _spot_source(market, spot_feed, ws_feed)
+        source = _spot_and_vol(market, spot_feed, ws_feed)
         if source is None:
             continue
-        now_epoch, spot, history = source
-        sigma_log = realized_vol_per_sqrt_second(history)
+        now_epoch, spot, history, sigma_log = source
         if sigma_log is None:
             continue
 
@@ -1033,14 +1072,13 @@ async def evaluate_and_maybe_trade(
         stats["skip_untrusted_underlying"] += 1
         return
 
-    source = _spot_source(market, spot_feed, ws_feed)
+    source = _spot_and_vol(market, spot_feed, ws_feed)
     if source is None:
         logger.debug("no spot price yet for %s (%s), skipping", market.ticker, market.underlying)
         stats["skip_no_spot"] += 1
         return
-    now_epoch, spot, history = source
+    now_epoch, spot, history, sigma_log = source
 
-    sigma_log = realized_vol_per_sqrt_second(history)
     if sigma_log is None:
         logger.debug("not enough spot history yet for %s, skipping", market.underlying)
         stats["skip_no_vol"] += 1
@@ -1059,7 +1097,7 @@ async def evaluate_and_maybe_trade(
     sample_id = None
     diagnostic_reasons: list[str] = []
     try:
-        sample_id = _maybe_sample_market(market, estimate, spot, seconds_left, ws_feed)
+        sample_id = _maybe_sample_market(market, estimate, spot, seconds_left, ws_feed, cycle_state)
         if sample_id is not None:
             diagnostic_reasons = _diagnostic_skip_reasons(market, estimate, spot, cycle_state, ws_feed, seconds_left)
     except Exception:
@@ -1154,6 +1192,13 @@ async def evaluate_and_maybe_trade(
     if market.ticker in market_blacklist:
         stats["skip_blacklisted"] += 1
         _record_skip_sample("blacklisted")
+        return
+
+    # See config.ZERO_FILL_RETRY_SECONDS: a ticker whose last IOC entry filled
+    # nothing waits before the next attempt.
+    if time.monotonic() < cycle_state.get("zero_fill_retry_at", {}).get(market.ticker, 0.0):
+        stats["skip_zero_fill_cooldown"] += 1
+        _record_skip_sample("zero_fill_cooldown")
         return
 
     already_committed = cycle_state.setdefault("contracts_committed", 0.0)
@@ -1553,8 +1598,12 @@ async def evaluate_and_maybe_trade(
     if filled_size <= 0.0:
         logger.info(
             "%s order placed but 0 filled (requested %.2f %s @ %.4f) -- no marketable depth at submit time; "
-            "not blacklisting, re-evaluates next tick",
+            "not blacklisting, retries in %.1fs",
             market.ticker, fill.filled_size, estimate.favored_side, fill.levels_used[-1][0],
+            config.ZERO_FILL_RETRY_SECONDS,
+        )
+        cycle_state.setdefault("zero_fill_retry_at", {})[market.ticker] = (
+            time.monotonic() + config.ZERO_FILL_RETRY_SECONDS
         )
         _finalize_sample(sample_id, traded=False, skip_reason="zero_fill")
         return
@@ -1626,6 +1675,28 @@ async def evaluate_and_maybe_trade(
         existing["contracts"] += filled_size
 
 
+def _any_in_entry_window(active_markets: list[ActiveMarket], now: datetime) -> bool:
+    return any(0 < (m.close_time - now).total_seconds() <= config.ENTRY_WINDOW_SECONDS for m in active_markets)
+
+
+async def _wait_for_next_pass(ws_feed: KalshiWebsocketFeed, event_driven: bool, pass_started_ts: float) -> None:
+    """Sleeps until the main loop's next pass. Plain POLL_INTERVAL_SECONDS
+    unless `event_driven` (see config.EVENT_DRIVEN_EVAL): then it returns as
+    soon as the ws feed applies a book/index update, but no sooner than
+    EVENT_MIN_INTERVAL_SECONDS after this pass started and no later than
+    POLL_INTERVAL_SECONDS after it -- so a quiet feed still gets the old
+    timer cadence, and a burst of deltas costs one pass, not one per delta.
+    """
+    if not event_driven:
+        await asyncio.sleep(config.POLL_INTERVAL_SECONDS)
+        return
+    elapsed = time.time() - pass_started_ts
+    if elapsed < config.EVENT_MIN_INTERVAL_SECONDS:
+        await asyncio.sleep(config.EVENT_MIN_INTERVAL_SECONDS - elapsed)
+        elapsed = time.time() - pass_started_ts
+    await ws_feed.wait_for_update(max(0.0, config.POLL_INTERVAL_SECONDS - elapsed))
+
+
 async def run_forever() -> None:
     spot_feed = SpotFeed()
     ws_feed = KalshiWebsocketFeed()
@@ -1635,8 +1706,9 @@ async def run_forever() -> None:
         order_manager.dry_run, config.LIGHTWEIGHT_MODE,
     )
 
+    global _sample_writer
     if config.SAMPLING_ENABLED:
-        sampling.init_db(config.SAMPLING_DB_PATH)
+        _sample_writer = sampling.SampleWriter(config.SAMPLING_DB_PATH)
         logger.info("sampling enabled, writing to %s", config.SAMPLING_DB_PATH)
 
     # Per-shard collateral at startup (Kalshi Exchange Sharding). Order
@@ -1654,6 +1726,8 @@ async def run_forever() -> None:
     ws_task = asyncio.create_task(ws_feed.run())
 
     last_discovery = 0.0
+    discovery_task: asyncio.Task | None = None
+    last_spot_poll = 0.0
     last_bankroll_refresh = 0.0
     sim_sync_task: asyncio.Task | None = None
     active_markets: list[ActiveMarket] = []
@@ -1686,13 +1760,31 @@ async def run_forever() -> None:
                     continue
                 lightweight_trading_phase = _lightweight_trading_phase(now_ts)
 
-            if now_ts - last_discovery >= config.DISCOVERY_INTERVAL_SECONDS:
+            # Discovery runs in the background (2026-10-24): it's several
+            # paginated REST scans, and awaiting it inline froze every
+            # evaluation pass, exit check and spot poll for as long as it took,
+            # once every DISCOVERY_INTERVAL_SECONDS -- in an entry window too.
+            # The loop keeps evaluating the previous list until the new one
+            # lands. Only with no list at all yet (startup, or every discovery
+            # so far failed) is there nothing to evaluate, so wait for it then.
+            if discovery_task is None and now_ts - last_discovery >= config.DISCOVERY_INTERVAL_SECONDS:
+                discovery_task = asyncio.create_task(asyncio.to_thread(find_active_markets, _underlying_scan_filter()))
+                last_discovery = now_ts
+            if discovery_task is not None and (discovery_task.done() or not active_markets):
                 try:
-                    active_markets = await asyncio.to_thread(find_active_markets, _underlying_scan_filter())
+                    # Longest interval first (2026-09-11): when a 15m and 1hr
+                    # market share a close_time (see _kelly_group_key),
+                    # whichever is evaluated first within a tick gets first
+                    # claim on their shared Kelly dollar budget -- sorting this
+                    # way makes the 1-hour leg the one that takes priority, per
+                    # the incident this grouping fixes (see
+                    # _group_kelly_cap_contracts). Sorted once here rather than
+                    # on every evaluation pass.
+                    active_markets = sorted(await discovery_task, key=lambda m: -m.interval_minutes)
                     logger.info("discovered %d active markets", len(active_markets))
                 except Exception:
                     logger.exception("discovery failed, keeping previous market list")
-                last_discovery = now_ts
+                discovery_task = None
 
             now = datetime.now(timezone.utc)
             key = _cycle_key(now)
@@ -1766,11 +1858,19 @@ async def run_forever() -> None:
             }
             ws_feed.set_desired_tickers(near_close_tickers)
 
-            underlyings = {m.underlying for m in active_markets}
-            for underlying in underlyings:
-                if ws_feed.connected() and ws_feed.index_id_for(underlying):
-                    continue  # fed directly by cfbenchmarks_value, no REST poll needed
-                await asyncio.to_thread(spot_feed.poll, underlying)
+            # Coinbase polls keep the POLL_INTERVAL_SECONDS cadence even when
+            # config.EVENT_DRIVEN_EVAL wakes the loop more often, and run
+            # concurrently: one at a time, each underlying's HTTP round-trip
+            # delayed the evaluation pass behind it.
+            if now_ts - last_spot_poll >= config.POLL_INTERVAL_SECONDS:
+                last_spot_poll = now_ts
+                to_poll = [
+                    u for u in {m.underlying for m in active_markets}
+                    # BTC/ETH are fed directly by cfbenchmarks_value, no REST poll needed
+                    if not (ws_feed.connected() and ws_feed.index_id_for(u))
+                ]
+                if to_poll:
+                    await asyncio.gather(*(asyncio.to_thread(spot_feed.poll, u) for u in to_poll))
 
             # In lightweight mode's phase 1 (warm-up), everything above this
             # point still runs -- discovery, ws order-book subscriptions, and
@@ -1779,13 +1879,8 @@ async def run_forever() -> None:
             # cold with only LIGHTWEIGHT_TRADING_WINDOW_SECONDS to build it up.
             # Evaluation/exit-checking themselves are phase-2-only.
             if lightweight_trading_phase:
-                # Longest interval first (2026-09-11): when a 15m and 1hr
-                # market share a close_time (see _kelly_group_key), whichever
-                # is evaluated first within a tick gets first claim on their
-                # shared Kelly dollar budget -- sorting this way makes the
-                # 1-hour leg the one that takes priority, per the incident
-                # this grouping fixes (see _group_kelly_cap_contracts).
-                for market in sorted(active_markets, key=lambda m: -m.interval_minutes):
+                # active_markets is already longest-interval-first (see discovery above).
+                for market in active_markets:
                     try:
                         await evaluate_and_maybe_trade(market, spot_feed, ws_feed, order_manager, cycle_state, stats, open_positions)
                     except Exception:
@@ -1802,9 +1897,17 @@ async def run_forever() -> None:
                 stats = _new_stats()
                 last_stats_log = now_ts
 
-            await asyncio.sleep(config.POLL_INTERVAL_SECONDS)
+            event_driven = (
+                config.EVENT_DRIVEN_EVAL
+                and lightweight_trading_phase
+                and ws_feed.connected()
+                and (open_positions or _any_in_entry_window(active_markets, datetime.now(timezone.utc)))
+            )
+            await _wait_for_next_pass(ws_feed, event_driven, now_ts)
     finally:
         ws_task.cancel()
+        if _sample_writer is not None:
+            _sample_writer.close()
 
 
 if __name__ == "__main__":

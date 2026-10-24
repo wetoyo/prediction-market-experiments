@@ -107,6 +107,10 @@ class KalshiWebsocketFeed:
         self._credentials_missing = False
         self._next_cmd_id = 1
         self._ws = None
+        # Set on every applied book snapshot/delta and index tick; the runner
+        # waits on it (wait_for_update) to evaluate as soon as data changes
+        # rather than on the next POLL_INTERVAL_SECONDS tick.
+        self._update_event = asyncio.Event()
 
     # -- public accessors -------------------------------------------------
 
@@ -146,6 +150,21 @@ class KalshiWebsocketFeed:
         if index_id is None:
             return []
         return list(self._index_history.get(index_id, ()))
+
+    async def wait_for_update(self, timeout: float) -> bool:
+        """Waits up to `timeout` seconds for a book or index update applied
+        since the previous call returned, then consumes it. True if one
+        arrived (immediately, if it already had), False on timeout. Updates
+        applied while the caller is busy evaluating are not lost: they leave
+        the flag set, so the next call returns at once.
+        """
+        if not self._update_event.is_set():
+            try:
+                await asyncio.wait_for(self._update_event.wait(), timeout)
+            except asyncio.TimeoutError:
+                return False
+        self._update_event.clear()
+        return True
 
     def set_desired_tickers(self, tickers: set[str]) -> None:
         """Called whenever discovery refreshes the active-market list. The
@@ -343,6 +362,7 @@ class KalshiWebsocketFeed:
         self._books[ticker] = {"yes": yes_levels, "no": no_levels}
         self._book_updated_at[ticker] = time.monotonic()
         self._subscribed_tickers.add(ticker)
+        self._update_event.set()
 
     def _apply_orderbook_delta(self, msg: dict) -> None:
         ticker = msg.get("market_ticker")
@@ -362,6 +382,7 @@ class KalshiWebsocketFeed:
         else:
             levels[price] = new_qty
         self._book_updated_at[ticker] = time.monotonic()
+        self._update_event.set()
 
     def _apply_cfbenchmarks_value(self, msg: dict) -> None:
         index_id = msg.get("index_id")
@@ -380,3 +401,4 @@ class KalshiWebsocketFeed:
         cutoff = now - SPOT_HISTORY_SECONDS
         while history and history[0][0] < cutoff:
             history.popleft()
+        self._update_event.set()
