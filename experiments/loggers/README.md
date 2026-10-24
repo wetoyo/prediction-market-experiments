@@ -33,7 +33,7 @@ never touched:
 ```bash
 git clone --depth 1 --recurse-submodules --shallow-submodules \
     https://github.com/wetoyo/prediction-market-experiments.git ~/loggers/repo
-cd ~/loggers/repo/expirments/loggers
+cd ~/loggers/repo/experiments/loggers
 PY=~/prediction-market-experiments/.venv/bin/python   # the trading venv, read-only use
 
 $PY loggerctl.py start btc-quotes --logger btc_implied_prob_quotes --days 14 --max-mb 60
@@ -51,5 +51,5 @@ Pull the data from the dev machine, then free the space:
 
 ```bash
 scp -r wetoyo@100.109.148.56:loggers/data/btc-quotes ./data/
-ssh wetoyo@100.109.148.56 "~/prediction-market-experiments/.venv/bin/python ~/loggers/repo/expirments/loggers/loggerctl.py remove btc-quotes --data"
+ssh wetoyo@100.109.148.56 "~/prediction-market-experiments/.venv/bin/python ~/loggers/repo/experiments/loggers/loggerctl.py remove btc-quotes --data"
 ```

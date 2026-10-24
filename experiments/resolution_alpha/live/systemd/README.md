@@ -20,13 +20,38 @@ repo-root venv at `.venv/`. Edit the paths if that changes.
   when `RESOLUTION_ALPHA_DISABLE_KILLSWITCH` is truthy in `.env`, so this unit is
   a clean no-op in that case (no bad-baseline killer left running).
 
+## Moving the Pi from `expirments/` to `experiments/` (one time)
+
+The top-level folder was renamed from `expirments/` to `experiments/` on
+2026-10-23. `git pull` moves only the tracked files. Everything gitignored
+stays behind in the old folder: `.env`, `live/logs/` (the ledger, the
+order records and the live DB), the loggers' `data/` and any `*.pid`.
+The installed units also still point at the old path. So do this once, with
+the service stopped:
+
+```sh
+cd ~/prediction-market-experiments
+sudo systemctl stop resolution-alpha.service
+git pull                                   # creates experiments/, leaves the ignored files in expirments/
+rsync -a expirments/ experiments/          # carry .env, logs/, data/ etc. across (never overwrites tracked files' content)
+find expirments -type f | head             # what's left should be only ignored files rsync just copied
+rm -rf expirments
+chmod +x experiments/resolution_alpha/live/arm_killswitch.sh
+sudo cp experiments/resolution_alpha/live/systemd/resolution-alpha*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart resolution-alpha.service
+```
+
+Logger units started by `loggerctl.py` before the rename run from the old
+path. Stop them before the move and `resume` them afterwards.
+
 ## Install / update on the Pi
 
 ```sh
 cd ~/prediction-market-experiments
 git pull
-chmod +x expirments/resolution_alpha/live/arm_killswitch.sh
-sudo cp expirments/resolution_alpha/live/systemd/resolution-alpha*.service /etc/systemd/system/
+chmod +x experiments/resolution_alpha/live/arm_killswitch.sh
+sudo cp experiments/resolution_alpha/live/systemd/resolution-alpha*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 # start (pulls in the kill-switch unit too):
 sudo systemctl restart resolution-alpha.service

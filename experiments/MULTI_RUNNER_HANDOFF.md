@@ -34,11 +34,11 @@ its own dollar allocation.
 | New ID format `ra-<y|n>-<28 hex>` | **Unconfirmed.** No resolution_alpha order had been placed since the restart as of 14:58. The older `ra-<32 hex>` was accepted: 40 orders and 23 fills with 0 HTTP errors, 01:24-14:37. |
 | btc_implied_prob / golf_field_alpha | **Code done, nothing running** anywhere. They're shadow by default. |
 | Git | Everything is on `origin/main`. The Pi's checkout was fast-forwarded to `2ed2f90` on 2026-09-27 (disk only; the running process predates it). |
-| Tests | `python -m pytest shared/tests resolution_alpha/tests` from `expirments/`: 133 pass. `python test_ledger_wiring.py` in `btc_implied_prob/` and in `golf_field_alpha/`: all scenarios pass. |
+| Tests | `python -m pytest shared/tests resolution_alpha/tests` from `experiments/`: 133 pass. `python test_ledger_wiring.py` in `btc_implied_prob/` and in `golf_field_alpha/`: all scenarios pass. |
 
 ### What `1b9145e` did
 
-- Moved `sim_bankroll.py` from `resolution_alpha/` to **`expirments/shared/`**.
+- Moved `sim_bankroll.py` from `resolution_alpha/` to **`experiments/shared/`**.
   - Each `order_manager.py` appends `../shared` to `sys.path`, so the imports read the same as
     before.
   - It adds resting-order **holds**: the available cash is `cash - sum(holds)`, and the status file's
@@ -105,14 +105,14 @@ still capped only at the whole real balance, and only `account_reconciler.py` no
    ```
    ssh wetoyo@100.109.148.56
    journalctl -u resolution-alpha.service --since '2026-09-26 14:37' --no-pager | grep -v 'eval summary' | grep -E 'LIVE ORDER|entry filled|0 filled|HTTPError|invalid|400|ERROR|Traceback'
-   cd ~/prediction-market-experiments/expirments/resolution_alpha && ../../.venv/bin/python inspect_order_records.py
+   cd ~/prediction-market-experiments/experiments/resolution_alpha && ../../.venv/bin/python inspect_order_records.py
    ```
    Fills, no 400s, and the `ra-<y|n>-<hex>` shape all showing means it's accepted: add a row to
    `SIM_BANKROLL_HANDOFF.md`'s results log. A 400 or `invalid` means it's rejected: **tell the owner
    right away**, because resolution_alpha then can't enter any trade. The fix is described in that
    handoff's caveat section, under "Orders rejected".
 2. **Get the Pi onto `1b9145e`** (disk only, no restart). This matters before resolution_alpha's
-   *next* restart: its `order_manager.py` on `main` imports from `expirments/shared/`, and a restart
+   *next* restart: its `order_manager.py` on `main` imports from `experiments/shared/`, and a restart
    onto a partial checkout would fail at import. Moving the Pi to `main` is a plain fast-forward:
    ```
    cd ~/prediction-market-experiments
@@ -120,7 +120,7 @@ still capped only at the whole real balance, and only `account_reconciler.py` no
    git fetch origin && git diff --stat HEAD origin/main              # expect the 1b9145e files
    git merge --ff-only origin/main && git submodule update
    # import smoke test (loads what a restart would load; places nothing):
-   cd expirments/resolution_alpha && ../../.venv/bin/python -c "import order_manager; print('import ok')"
+   cd experiments/resolution_alpha && ../../.venv/bin/python -c "import order_manager; print('import ok')"
    ```
    The running process is unaffected by a disk change. Ask the owner before any restart.
 3. **Get the owner's decisions** (below) before anything else goes live.

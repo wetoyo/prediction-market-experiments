@@ -10,7 +10,7 @@ Real money. Without --yes-real-money it does everything EXCEPT the place_order
 call (loads creds, picks a market, prints the plan). With it, it fires, and
 then cancels any unfilled remainder so nothing is left resting.
 
-Run from expirments/resolution_alpha/ with the repo-root venv:
+Run from experiments/resolution_alpha/ with the repo-root venv:
 
     ../../.venv/Scripts/python.exe tests/live_buy_smoke.py                  # dry (plan only)
     ../../.venv/Scripts/python.exe tests/live_buy_smoke.py --yes-real-money
