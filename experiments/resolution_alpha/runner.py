@@ -1788,6 +1788,7 @@ async def run_forever() -> None:
 
             now = datetime.now(timezone.utc)
             key = _cycle_key(now)
+            shard_fetch_this_pass = False
             if key != last_cycle_key:
                 cycle_state = {}
                 last_cycle_key = key
@@ -1800,6 +1801,7 @@ async def run_forever() -> None:
                 if not order_manager.dry_run:
                     try:
                         cycle_state["shard_balances"] = await asyncio.to_thread(order_manager.get_shard_balances)
+                        shard_fetch_this_pass = True
                     except Exception:
                         logger.exception("failed to fetch per-shard balances this cycle")
                         cycle_state["shard_balances"] = None
@@ -1832,7 +1834,12 @@ async def run_forever() -> None:
                 or now_ts - last_bankroll_refresh >= config.BANKROLL_REFRESH_INTERVAL_SECONDS
             ):
                 try:
-                    cycle_state["bankroll_dollars"] = await asyncio.to_thread(order_manager.get_balance_dollars)
+                    # Right after the boundary's shard fetch, reuse its response:
+                    # a second GET /portfolio/balance milliseconds later got a 429
+                    # at every boundary (see OrderManager._shard_balance_response).
+                    cycle_state["bankroll_dollars"] = await asyncio.to_thread(
+                        order_manager.get_balance_dollars, reuse_shard_fetch=shard_fetch_this_pass
+                    )
                 except Exception:
                     logger.exception("failed to fetch account balance -- halting sizing/trading until the next refresh")
                     cycle_state["bankroll_dollars"] = None

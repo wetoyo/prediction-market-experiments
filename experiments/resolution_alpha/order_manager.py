@@ -139,6 +139,25 @@ class OrderManager:
     _checks_since_status_log = 0
     _refusal_logged_at = 0.0
     _collision_logged_at = 0.0
+    # The last get_shard_balances response, handed once to the get_balance_dollars
+    # call that follows it. At every 15-minute cycle boundary runner.py made
+    # those two calls back to back as two GET /portfolio/balance requests, and
+    # the second got a 429 at every boundary (2026-11-07/08: 96 a day), halting
+    # sizing until the next refresh ~15s later.
+    _shard_balance_response: dict | None = None
+    BALANCE_429_RETRY_SECONDS = 1.0
+
+    def _balance(self) -> dict:
+        """GET /portfolio/balance, retrying a 429 once."""
+        try:
+            response = self._client.get_balance()
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status != 429:
+                raise
+            time.sleep(self.BALANCE_429_RETRY_SECONDS)
+            response = self._client.get_balance()
+        return response
 
     def __init__(
         self,
@@ -207,7 +226,7 @@ class OrderManager:
                     "SIZE_FROM_SIM_BANKROLL is on but SIM_BANKROLL_ENABLED is off -- sizing off the real balance"
                 )
 
-    def get_balance_dollars(self) -> float:
+    def get_balance_dollars(self, reuse_shard_fetch: bool = False) -> float:
         """Bankroll for Kelly sizing (runner.py's _kelly_contracts): the real
         account balance, or with SIZE_FROM_SIM_BANKROLL on, this manager's
         ledger cash capped at the real balance (SimulatedBankroll.sizing_cash).
@@ -221,8 +240,14 @@ class OrderManager:
         runner.py still subtracts each fill's cost from the value returned
         here until the next refresh. That's not a double count: the ledger
         is read once per refresh, and the runner decrements its own copy.
+
+        `reuse_shard_fetch`: use the response get_shard_balances just fetched
+        instead of a second request (runner.py, right after a cycle boundary).
+        It's used at most once, and an order placed in between voids it.
         """
-        balance = float(self._client.get_balance()["balance_dollars"])
+        reused, self._shard_balance_response = self._shard_balance_response, None
+        response = reused if (reuse_shard_fetch and reused is not None) else self._balance()
+        balance = float(response["balance_dollars"])
         if self._sim is None:
             return balance
         self._balance_snapshot = (balance, self._sim.fill_seq)
@@ -606,7 +631,9 @@ class OrderManager:
         such attempt 404 and blacklist the ticker. Only call when dry_run is
         False.
         """
-        breakdown = self._client.get_balance().get("balance_breakdown", [])
+        response = self._balance()
+        self._shard_balance_response = response
+        breakdown = response.get("balance_breakdown", [])
         return {int(row["exchange_index"]): float(row["balance"]) for row in breakdown}
 
     def buy_favored_side(
@@ -659,6 +686,9 @@ class OrderManager:
             count_str, side.upper(), ticker, f"{limit_price:.4f}", api_side, price_str,
             time_in_force, exchange_index,
         )
+        # A balance read before this order must never be paired with the
+        # ledger's fill counter after it (get_balance_dollars' snapshot).
+        self._shard_balance_response = None
         response = self._client.place_order(
             ticker=ticker, side=api_side, count=count_str, price=price_str,
             time_in_force=time_in_force, exchange_index=exchange_index, reduce_only=reduce_only,
