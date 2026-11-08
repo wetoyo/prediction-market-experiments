@@ -21,7 +21,10 @@ fi
 
 mkdir -p logs logs/old
 shopt -s nullglob
-for f in logs/*; do
+# Archive only the previous run's logs. State kept in logs/ (the ledger's
+# sim_bankroll.json, divergence logs) must stay put: moving it loses the
+# ledger's resume on the next start.
+for f in logs/*.log logs/*.log.stderr; do
     [ -f "$f" ] && mv -f "$f" logs/old/
 done
 shopt -u nullglob

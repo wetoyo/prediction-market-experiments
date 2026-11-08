@@ -51,7 +51,7 @@ if (-not (Test-Path $oldLogDir)) {
 # Get-ChildItem straight into a Move-Item that empties the same directory
 # it's still enumerating is unreliable (verified live: it moved samples.db
 # too, despite the exclusion filter, when done as one combined pipeline).
-$logsToArchive = Get-ChildItem -Path "logs" -File | Where-Object { $_.Name -ne "samples.db" }
+$logsToArchive = Get-ChildItem -Path "logs" -File | Where-Object { $_.Name -like "*.log" -or $_.Name -like "*.log.stderr" }  # logs only; ledger state (sim_bankroll.json etc.) stays put
 foreach ($file in $logsToArchive) {
     Move-Item -Path $file.FullName -Destination $oldLogDir -Force
 }

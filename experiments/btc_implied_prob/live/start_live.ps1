@@ -41,7 +41,7 @@ if (-not (Test-Path "logs")) {
 if (-not (Test-Path $oldLogDir)) {
     New-Item -ItemType Directory -Path $oldLogDir | Out-Null
 }
-$logsToArchive = Get-ChildItem -Path "logs" -File
+$logsToArchive = Get-ChildItem -Path "logs" -File | Where-Object { $_.Name -like "*.log" -or $_.Name -like "*.log.stderr" }  # logs only; ledger state (sim_bankroll.json etc.) stays put
 foreach ($file in $logsToArchive) {
     Move-Item -Path $file.FullName -Destination $oldLogDir -Force
 }

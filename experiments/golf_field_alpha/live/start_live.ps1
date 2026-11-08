@@ -20,7 +20,7 @@ if (Test-Path $RunnerPidFile) {
 $oldLogDir = "logs\old"
 if (-not (Test-Path "logs")) { New-Item -ItemType Directory -Path "logs" | Out-Null }
 if (-not (Test-Path $oldLogDir)) { New-Item -ItemType Directory -Path $oldLogDir | Out-Null }
-foreach ($file in Get-ChildItem -Path "logs" -File) {
+foreach ($file in Get-ChildItem -Path "logs" -File | Where-Object { $_.Name -like "*.log" -or $_.Name -like "*.log.stderr" }  # logs only; ledger state (sim_bankroll.json etc.) stays put) {
     Move-Item -Path $file.FullName -Destination $oldLogDir -Force
 }
 
