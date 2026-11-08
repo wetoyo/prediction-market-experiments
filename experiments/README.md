@@ -6,6 +6,7 @@ experiment (own `config.py`, `strategy.py`/`runner.py`, `README.md`):
 - `resolution_alpha/` -- crypto interval-market resolution-window strategy.
 - `btc_implied_prob/` -- BTC/ETH interval markets priced off Deribit implied vol.
 - `golf_field_alpha/` -- golf tournament outright-winner field de-vig.
+- `weather_lock/` -- daily high/low temperature markets already decided by NWS station reports.
 
 Shelved trades (backtested, not worth running) live in `binned/`, each with
 its findings. See `binned/README.md`.

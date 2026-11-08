@@ -1,0 +1,8 @@
+__pycache__/
+.env
+positions_state.json
+positions_state.json.dryrun
+positions_state.json.tmp
+live/logs/
+live/state/
+live/.runner.pid
